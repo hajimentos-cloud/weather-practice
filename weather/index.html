@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>お天気チェック</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: #eaf3fb;
+    color: #1f2d3d;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  main {
+    width: 100%;
+    max-width: 480px;
+    padding: 24px 16px;
+    flex: 1;
+  }
+  h1 { font-size: 1.5rem; text-align: center; margin: 0 0 20px; }
+  .controls {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  label { display: block; font-size: 0.9rem; font-weight: bold; margin-bottom: 6px; }
+  select, input[type="date"] {
+    width: 100%;
+    font-size: 1rem;
+    padding: 10px;
+    border: 1px solid #b8c6d4;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    background: #fff;
+  }
+  .controls > :last-child { margin-bottom: 0; }
+  .result {
+    margin-top: 20px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px 16px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  .result .date { font-size: 0.95rem; color: #5a6b7c; }
+  .result .weather { font-size: 2rem; font-weight: bold; margin: 8px 0 16px; }
+  .temps { display: flex; justify-content: center; gap: 32px; }
+  .temps div { font-size: 0.85rem; color: #5a6b7c; }
+  .temps strong { display: block; font-size: 1.6rem; }
+  .max strong { color: #d9480f; }
+  .min strong { color: #1971c2; }
+  .message { color: #5a6b7c; }
+  .error { color: #c92a2a; }
+  footer {
+    font-size: 0.8rem;
+    color: #5a6b7c;
+    padding: 16px;
+    text-align: center;
+  }
+  footer a { color: #1971c2; }
+</style>
+</head>
+<body>
+<main>
+  <h1>お天気チェック</h1>
+  <div class="controls">
+    <label for="region">地域</label>
+    <select id="region"></select>
+    <label for="date">日付</label>
+    <input type="date" id="date">
+  </div>
+  <div class="result" id="result">
+    <p class="message">地域と日付を選んでください。</p>
+  </div>
+</main>
+<footer>
+  天気データ: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>）
+</footer>
+
+<script>
+  // 47都道府県の県庁所在地（緯度・経度）
+  const REGIONS = [
+    { name: "北海道（札幌）", lat: 43.0642, lon: 141.3469 },
+    { name: "青森県（青森）", lat: 40.8244, lon: 140.7400 },
+    { name: "岩手県（盛岡）", lat: 39.7036, lon: 141.1527 },
+    { name: "宮城県（仙台）", lat: 38.2688, lon: 140.8721 },
+    { name: "秋田県（秋田）", lat: 39.7186, lon: 140.1024 },
+    { name: "山形県（山形）", lat: 38.2404, lon: 140.3633 },
+    { name: "福島県（福島）", lat: 37.7503, lon: 140.4676 },
+    { name: "茨城県（水戸）", lat: 36.3418, lon: 140.4468 },
+    { name: "栃木県（宇都宮）", lat: 36.5658, lon: 139.8836 },
+    { name: "群馬県（前橋）", lat: 36.3911, lon: 139.0608 },
+    { name: "埼玉県（さいたま）", lat: 35.8617, lon: 139.6455 },
+    { name: "千葉県（千葉）", lat: 35.6046, lon: 140.1233 },
+    { name: "東京都（新宿）", lat: 35.6895, lon: 139.6917 },
+    { name: "神奈川県（横浜）", lat: 35.4478, lon: 139.6425 },
+    { name: "新潟県（新潟）", lat: 37.9026, lon: 139.0236 },
+    { name: "富山県（富山）", lat: 36.6953, lon: 137.2113 },
+    { name: "石川県（金沢）", lat: 36.5947, lon: 136.6256 },
+    { name: "福井県（福井）", lat: 36.0652, lon: 136.2216 },
+    { name: "山梨県（甲府）", lat: 35.6642, lon: 138.5684 },
+    { name: "長野県（長野）", lat: 36.6513, lon: 138.1810 },
+    { name: "岐阜県（岐阜）", lat: 35.3912, lon: 136.7223 },
+    { name: "静岡県（静岡）", lat: 34.9769, lon: 138.3831 },
+    { name: "愛知県（名古屋）", lat: 35.1802, lon: 136.9066 },
+    { name: "三重県（津）", lat: 34.7303, lon: 136.5086 },
+    { name: "滋賀県（大津）", lat: 35.0045, lon: 135.8686 },
+    { name: "京都府（京都）", lat: 35.0214, lon: 135.7556 },
+    { name: "大阪府（大阪）", lat: 34.6937, lon: 135.5023 },
+    { name: "兵庫県（神戸）", lat: 34.6913, lon: 135.1830 },
+    { name: "奈良県（奈良）", lat: 34.6851, lon: 135.8049 },
+    { name: "和歌山県（和歌山）", lat: 34.2260, lon: 135.1675 },
+    { name: "鳥取県（鳥取）", lat: 35.5039, lon: 134.2383 },
+    { name: "島根県（松江）", lat: 35.4723, lon: 133.0505 },
+    { name: "岡山県（岡山）", lat: 34.6618, lon: 133.9344 },
+    { name: "広島県（広島）", lat: 34.3966, lon: 132.4596 },
+    { name: "山口県（山口）", lat: 34.1861, lon: 131.4714 },
+    { name: "徳島県（徳島）", lat: 34.0658, lon: 134.5593 },
+    { name: "香川県（高松）", lat: 34.3402, lon: 134.0434 },
+    { name: "愛媛県（松山）", lat: 33.8416, lon: 132.7657 },
+    { name: "高知県（高知）", lat: 33.5597, lon: 133.5311 },
+    { name: "福岡県（福岡）", lat: 33.6064, lon: 130.4183 },
+    { name: "佐賀県（佐賀）", lat: 33.2494, lon: 130.2988 },
+    { name: "長崎県（長崎）", lat: 32.7503, lon: 129.8777 },
+    { name: "熊本県（熊本）", lat: 32.7898, lon: 130.7417 },
+    { name: "大分県（大分）", lat: 33.2382, lon: 131.6126 },
+    { name: "宮崎県（宮崎）", lat: 31.9111, lon: 131.4239 },
+    { name: "鹿児島県（鹿児島）", lat: 31.5602, lon: 130.5581 },
+    { name: "沖縄県（那覇）", lat: 26.2124, lon: 127.6809 }
+  ];
+
+  // 天気コード（WMO）を日本語に変換
+  function weatherText(code) {
+    if (code === 0) return "☀️ 快晴";
+    if (code === 1) return "🌤 晴れ";
+    if (code === 2) return "⛅ 晴れ時々くもり";
+    if (code === 3) return "☁️ くもり";
+    if (code === 45 || code === 48) return "🌫 霧";
+    if (code >= 51 && code <= 57) return "🌦 霧雨";
+    if (code >= 61 && code <= 67) return "🌧 雨";
+    if (code >= 71 && code <= 77) return "❄️ 雪";
+    if (code >= 80 && code <= 82) return "🌧 にわか雨";
+    if (code === 85 || code === 86) return "❄️ にわか雪";
+    if (code === 95) return "⛈ 雷雨";
+    if (code === 96 || code === 99) return "⛈ 雷雨（ひょうを伴う）";
+    return "不明（コード " + code + "）";
+  }
+
+  const regionEl = document.getElementById("region");
+  const dateEl = document.getElementById("date");
+  const resultEl = document.getElementById("result");
+
+  REGIONS.forEach(function (r, i) {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = r.name;
+    regionEl.appendChild(opt);
+  });
+  regionEl.value = 12; // 東京
+
+  function toYMD(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
+
+  // 選べる日付: 今日の92日前から、予報APIが返せる最終日（今日を含めて16日間＝15日後）まで
+  const today = new Date();
+  const minDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 92);
+  const maxDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 15);
+  dateEl.min = toYMD(minDate);
+  dateEl.max = toYMD(maxDate);
+  dateEl.value = toYMD(today);
+
+  function show(html) { resultEl.innerHTML = html; }
+
+  async function update() {
+    const region = REGIONS[regionEl.value];
+    const date = dateEl.value;
+    if (!date) { show('<p class="message">日付を選んでください。</p>'); return; }
+    if (date < dateEl.min || date > dateEl.max) {
+      show('<p class="error">選べる日付は ' + dateEl.min + ' から ' + dateEl.max + ' までです。</p>');
+      return;
+    }
+    show('<p class="message">読み込み中…</p>');
+
+    const query = "?latitude=" + region.lat
+      + "&longitude=" + region.lon
+      + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
+      + "&timezone=Asia%2FTokyo"
+      + "&start_date=" + date
+      + "&end_date=" + date;
+
+    async function fetchDaily(base) {
+      const res = await fetch(base + query);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return (await res.json()).daily;
+    }
+
+    try {
+      let d = await fetchDaily("https://api.open-meteo.com/v1/forecast");
+      // 古い日付は予報APIだと空になるため、同じ Open-Meteo の過去データAPIで取り直す
+      if (d && d.weather_code && d.weather_code[0] === null) {
+        d = await fetchDaily("https://archive-api.open-meteo.com/v1/archive");
+      }
+      if (!d || !d.time || d.time.length === 0 || d.weather_code[0] === null) {
+        show('<p class="error">この日のデータがありません。別の日付で試してください。</p>');
+        return;
+      }
+      show(
+        '<div class="date">' + region.name + "　" + d.time[0] + "</div>"
+        + '<div class="weather">' + weatherText(d.weather_code[0]) + "</div>"
+        + '<div class="temps">'
+        + '<div class="max">最高気温<strong>' + Math.round(d.temperature_2m_max[0]) + "℃</strong></div>"
+        + '<div class="min">最低気温<strong>' + Math.round(d.temperature_2m_min[0]) + "℃</strong></div>"
+        + "</div>"
+      );
+    } catch (e) {
+      show('<p class="error">天気を取得できませんでした。時間をおいて、もう一度試してください。（' + e.message + "）</p>");
+    }
+  }
+
+  regionEl.addEventListener("change", update);
+  dateEl.addEventListener("change", update);
+  update();
+</script>
+</body>
+</html>
