@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#d6e9f8">
+<script>
+  // Safari 上部の色と、ページ全体の下地の色を、最初の表示から時間帯に合わせる（あとで天気に合わせて更新される）
+  (function () {
+    var h = new Date().getHours();
+    var c = (h >= 19 || h < 5) ? "#070b22" : (h < 7) ? "#34336b" : (h < 16) ? "#d6e9f8" : "#2f2a63";
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", c);
+    document.documentElement.style.backgroundColor = c;
+  })();
+</script>
 <!-- ホーム画面に追加したときのアイコン・名前（iPhone の Safari 用） -->
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
@@ -294,7 +303,7 @@
     <input type="date" id="date">
   </div>
   <div class="edit-row">
-    <button id="editBtn" type="button" class="edit-btn" aria-pressed="false">↕ 並び替え</button>
+    <button id="editBtn" type="button" class="edit-btn" aria-pressed="false">⇅ 並び替え</button>
     <button id="resetOrderBtn" type="button" class="edit-btn" hidden>元の順番に戻す</button>
   </div>
   <div id="sections">
@@ -1021,7 +1030,9 @@
     currentPhase = phase;
     document.body.dataset.phase = phase;
     document.body.dataset.weather = currentTheme;
-    if (themeColorEl) themeColorEl.setAttribute("content", phase === "day" ? THEME_TOP[currentTheme] : PHASE_TOP[phase]);
+    const topColor = phase === "day" ? THEME_TOP[currentTheme] : PHASE_TOP[phase];
+    if (themeColorEl) themeColorEl.setAttribute("content", topColor);
+    document.documentElement.style.backgroundColor = topColor;
     buildSky(currentTheme, phase);
     if (force || themeChanged) buildFx(currentTheme);
     updateGreeting();
@@ -1277,7 +1288,7 @@
     const on = !document.body.classList.contains("editing");
     document.body.classList.toggle("editing", on);
     editBtn.setAttribute("aria-pressed", String(on));
-    editBtn.textContent = on ? "✔ 並び替えを終える" : "↕ 並び替え";
+    editBtn.textContent = on ? "✓ 並び替えを終える" : "⇅ 並び替え";
     resetOrderBtn.hidden = !on;
   });
   resetOrderBtn.addEventListener("click", function () {
