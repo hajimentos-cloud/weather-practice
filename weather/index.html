@@ -147,6 +147,20 @@
     flex: 1;
   }
   h1 { font-size: 1.5rem; text-align: center; margin: 0 0 20px; }
+  /* 設定バー: スクロールしても、画面の上に残る。押すと、郵便番号・地域・日付の設定が、開閉する */
+  .settings-bar {
+    position: sticky; top: 8px; z-index: 20;
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; margin: 0 0 8px; padding: 10px 14px;
+    font: inherit; font-size: 0.9rem; text-align: left; color: #1f2d3d;
+    background: rgba(255, 255, 255, 0.92);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    border: 1px solid rgba(25, 113, 194, 0.25); border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); cursor: pointer;
+  }
+  .sb-place { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
+  .sb-date { flex: none; white-space: nowrap; color: #5a6b7c; }
+  .sb-toggle { flex: none; white-space: nowrap; color: #1971c2; font-size: 0.8rem; }
   .controls {
     background: #fff;
     border-radius: 12px;
@@ -286,7 +300,12 @@
 <main>
   <h1>お天気チェック</h1>
   <p class="greeting" id="greeting"></p>
-  <div class="controls">
+  <button id="settingsToggle" class="settings-bar" type="button" aria-expanded="true" aria-controls="settingsPanel">
+    <span class="sb-place" id="sbPlace">📍 …</span>
+    <span class="sb-date" id="sbDate"></span>
+    <span class="sb-toggle"><span id="sbLabel">閉じる</span> <span id="sbChev" aria-hidden="true">▴</span></span>
+  </button>
+  <div class="controls" id="settingsPanel">
     <label for="zip">郵便番号で探す</label>
     <div class="zip-row">
       <input id="zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例: 1600023" maxlength="9">
@@ -1112,12 +1131,47 @@
     }
   }
 
+  // ---- 設定バー（郵便番号・地域・日付の設定を、開閉する）----
+  const SETTINGS_KEY = "weather-practice:settings";
+  const settingsToggle = document.getElementById("settingsToggle");
+  const settingsPanel = document.getElementById("settingsPanel");
+
+  // バーに、いまの場所と日付を出す（設定を閉じていても、何を見ているかわかるように）
+  function updateSettingsSummary() {
+    const region = currentRegion();
+    const name = region ? region.name.replace(/^〒[0-9-]+\s*/, "") : "";
+    document.getElementById("sbPlace").textContent = "📍 " + name;
+    const date = dateEl.value;
+    document.getElementById("sbDate").textContent = !date ? "" :
+      (date === todayStr ? "今日 " : date === addDays(todayStr, 1) ? "明日 " : "") + ymdLabel(date);
+  }
+  function setSettingsOpen(open, save) {
+    settingsPanel.hidden = !open;
+    settingsToggle.setAttribute("aria-expanded", String(open));
+    document.getElementById("sbLabel").textContent = open ? "閉じる" : "設定";
+    document.getElementById("sbChev").textContent = open ? "▴" : "▾";
+    if (save) { try { localStorage.setItem(SETTINGS_KEY, open ? "open" : "closed"); } catch (e) { /* 保存できなくても、開閉はできる */ } }
+  }
+  settingsToggle.addEventListener("click", function () {
+    const open = settingsPanel.hidden; // いま閉じていれば、開く
+    setSettingsOpen(open, true);
+    // 下までスクロールしていても、開いた設定が見えるように、すぐ上に戻る
+    // （なめらかなスクロールは、設定が開いてページが伸びた直後の位置調整とぶつかるため、使わない）
+    if (open && window.scrollY > 0) window.scrollTo(0, 0);
+  });
+  (function restoreSettingsState() {
+    let open = true; // 初めて開いたときは、設定を開いておく
+    try { if (localStorage.getItem(SETTINGS_KEY) === "closed") open = false; } catch (e) { /* 読めなければ開いたまま */ }
+    setSettingsOpen(open, false);
+  })();
+
   // ---- 選んだ日の天気 ----
   let seq = 0;
   const insightsEl = document.getElementById("insights");
 
   async function update() {
     const my = ++seq;
+    updateSettingsSummary();
     const region = currentRegion();
     const date = dateEl.value;
     if (!date) { show('<p class="message">日付を選んでください。</p>'); return; }
