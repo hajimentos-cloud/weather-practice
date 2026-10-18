@@ -148,10 +148,18 @@
   }
   h1 { font-size: 1.5rem; text-align: center; margin: 0 0 20px; }
   /* 設定バー: スクロールしても、画面の上に残る。押すと、郵便番号・地域・日付の設定が、開閉する */
+  /* バーと「今日」ボタンを横に並べる枠。この枠が、スクロールしても、画面の上に残る */
+  .settings-wrap { position: sticky; top: 8px; z-index: 20; display: flex; gap: 8px; margin: 0 0 8px; }
+  .settings-wrap[hidden], .today-btn[hidden] { display: none; }
+  .today-btn {
+    flex: none; padding: 0 14px; font: inherit; font-size: 0.85rem; font-weight: bold; white-space: nowrap;
+    color: #fff; background: #1971c2; border: 1px solid #1971c2; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); cursor: pointer;
+  }
   .settings-bar {
-    position: sticky; top: 8px; z-index: 20;
+    flex: 1; min-width: 0;
     display: flex; align-items: center; gap: 8px;
-    width: 100%; margin: 0 0 8px; padding: 10px 14px;
+    margin: 0; padding: 10px 14px;
     font: inherit; font-size: 0.9rem; text-align: left; color: #1f2d3d;
     background: rgba(255, 255, 255, 0.92);
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
@@ -300,11 +308,14 @@
 <main>
   <h1>お天気チェック</h1>
   <p class="greeting" id="greeting"></p>
-  <button id="settingsToggle" class="settings-bar" type="button" aria-expanded="true" aria-controls="settingsPanel">
-    <span class="sb-place" id="sbPlace">📍 …</span>
-    <span class="sb-date" id="sbDate"></span>
-    <span class="sb-toggle"><span id="sbLabel">閉じる</span> <span id="sbChev" aria-hidden="true">▴</span></span>
-  </button>
+  <div class="settings-wrap">
+    <button id="settingsToggle" class="settings-bar" type="button" aria-expanded="true" aria-controls="settingsPanel">
+      <span class="sb-place" id="sbPlace">📍 …</span>
+      <span class="sb-date" id="sbDate"></span>
+      <span class="sb-toggle"><span id="sbLabel">閉じる</span> <span id="sbChev" aria-hidden="true">▴</span></span>
+    </button>
+    <button id="todayBtn" class="today-btn" type="button" aria-label="今日の天気に戻る" hidden>↩ 今日</button>
+  </div>
   <div class="controls" id="settingsPanel">
     <label for="zip">郵便番号で探す</label>
     <div class="zip-row">
@@ -1157,7 +1168,14 @@
     const date = dateEl.value;
     document.getElementById("sbDate").textContent = !date ? "" :
       (date === todayStr ? "今日 " : date === addDays(todayStr, 1) ? "明日 " : "") + ymdLabel(date);
+    // 今日以外の日を見ているときだけ、ワンタッチで今日に戻るボタンを出す
+    document.getElementById("todayBtn").hidden = (date === todayStr);
   }
+  document.getElementById("todayBtn").addEventListener("click", function () {
+    dateEl.value = todayStr;
+    dateEl.dispatchEvent(new Event("change")); // カレンダーで選んだときと同じ処理が動く
+    window.scrollTo(0, 0); // 下までスクロールしていても、すぐ上に戻って、今日の天気が見えるようにする
+  });
   function setSettingsOpen(open, save) {
     settingsPanel.hidden = !open;
     settingsToggle.setAttribute("aria-expanded", String(open));
