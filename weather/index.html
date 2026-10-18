@@ -160,6 +160,23 @@
   .default-msg { font-size: 0.8rem; color: #5a6b7c; margin: 6px 0 0; min-height: 1.2em; }
   .zip-msg { font-size: 0.8rem; color: #5a6b7c; margin: 0 0 14px; min-height: 1.2em; }
   .zip-msg.err { color: #c92a2a; }
+  .hours { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  .hcell { border-radius: 8px; padding: 6px 0 5px; text-align: center; font-size: 0.7rem; line-height: 1.35; }
+  .hcell .h-time { color: #5a6b7c; }
+  .hcell .h-icon { font-size: 1.3rem; line-height: 1.5; }
+  .hcell .h-temp { font-weight: bold; font-size: 0.8rem; }
+  .hcell .h-pop { color: #2b8a3e; font-size: 0.68rem; }
+  .hcell.past { opacity: 0.45; }
+  .hcell.now { outline: 2px solid #1971c2; outline-offset: -1px; }
+  .hc-sunny { background: #fff1b8; }
+  .hc-partly { background: #e4f0fb; }
+  .hc-cloudy { background: #e6eaee; }
+  .hc-fog { background: #edeff1; }
+  .hc-rain { background: #cde2fa; }
+  .hc-snow { background: #e9f3ff; }
+  .hc-storm { background: #d9d2ee; }
+  .hday { font-weight: bold; margin: 12px 0 6px; font-size: 0.9rem; }
+  .hday:first-of-type { margin-top: 0; }
   .insight { padding: 10px 0; border-top: 1px solid #e9eef3; }
   .insight:first-of-type { border-top: none; padding-top: 0; }
   .insight h3 { font-size: 0.95rem; margin: 0 0 6px; }
@@ -209,6 +226,12 @@
     <section class="sec" data-id="result">
       <div class="result" id="result">
         <p class="message">地域と日付を選んでください。</p>
+      </div>
+    </section>
+    <section class="sec" data-id="hourly">
+      <div class="card" id="hourly">
+        <h2>🕒 今日・明日の時間ごとの天気</h2>
+        <p class="message">読み込み中…</p>
       </div>
     </section>
     <section class="sec" data-id="insights">
@@ -758,6 +781,62 @@
     buildFx(theme);
   }
 
+  // ---- 今日・明日の時間ごとの天気（3時間ごと。選んだ地域に合わせる）----
+  let hourSeq = 0;
+  async function updateHourly() {
+    const my = ++hourSeq;
+    const region = currentRegion();
+    const el = document.getElementById("hourly");
+    el.innerHTML = '<h2>🕒 今日・明日の時間ごとの天気</h2><p class="message">読み込み中…</p>';
+    try {
+      const t0 = todayStr, t1 = addDays(todayStr, 1);
+      const j = await getJson(FORECAST + "?" + loc(region)
+        + "&hourly=weather_code,temperature_2m,precipitation_probability&timezone=Asia%2FTokyo&start_date=" + t0 + "&end_date=" + t1);
+      if (my !== hourSeq) return;
+      const h = j.hourly;
+      const nowH = new Date().getHours();
+      function ok(v) { return v !== null && v !== undefined; }
+      let html = "";
+      [[t0, 0], [t1, 24]].forEach(function (day, di) {
+        html += '<div class="hday">' + (di === 0 ? "今日" : "明日") + "（" + ymdLabel(day[0]) + "）</div><div class=\"hours\">";
+        for (let slot = 0; slot < 8; slot++) {
+          const from = day[1] + slot * 3;
+          const codes = [], temps = [], pops = [];
+          for (let k = from; k < from + 3; k++) {
+            if (ok(h.weather_code[k])) codes.push(h.weather_code[k]);
+            if (ok(h.temperature_2m[k])) temps.push(h.temperature_2m[k]);
+            if (ok(h.precipitation_probability[k])) pops.push(h.precipitation_probability[k]);
+          }
+          const label = (slot * 3) + "時";
+          if (codes.length === 0) {
+            html += '<div class="hcell"><div class="h-time">' + label + '</div><div class="h-icon">-</div></div>';
+            continue;
+          }
+          // その3時間でいちばん悪い天気（1日の天気と同じ考え方）
+          const code = Math.max.apply(null, codes);
+          const temp = temps.length ? Math.round(temps.reduce(function (a, b) { return a + b; }, 0) / temps.length) : null;
+          const pop = pops.length ? Math.round(Math.max.apply(null, pops)) : null;
+          const isToday = di === 0;
+          const past = isToday && (slot * 3 + 2) < nowH;
+          const now = isToday && nowH >= slot * 3 && nowH < slot * 3 + 3;
+          const name = weatherText(code);
+          html += '<div class="hcell hc-' + themeFor(code) + (past ? " past" : "") + (now ? " now" : "")
+            + '" title="' + (slot * 3) + "〜" + (slot * 3 + 3) + "時 " + esc(name) + '" aria-label="' + (slot * 3) + "時から3時間 " + esc(name) + '">'
+            + '<div class="h-time">' + label + "</div>"
+            + '<div class="h-icon">' + name.split(" ")[0] + "</div>"
+            + '<div class="h-temp">' + (temp === null ? "-" : temp + "°") + "</div>"
+            + '<div class="h-pop">' + (pop === null ? "-" : pop + "%") + "</div></div>";
+        }
+        html += "</div>";
+      });
+      el.innerHTML = "<h2>🕒 今日・明日の時間ごとの天気（" + esc(region.name) + "）</h2>" + html
+        + '<p class="note">3時間ごとの天気・気温・降水確率です。天気は、その3時間でいちばん悪い天気を表示しています。青い枠は、いまの時間帯です。</p>';
+    } catch (e) {
+      if (my !== hourSeq) return;
+      el.innerHTML = '<h2>🕒 今日・明日の時間ごとの天気</h2><p class="error">取得できませんでした。（' + esc(e.message) + "）</p>";
+    }
+  }
+
   // ---- 選んだ日の天気 ----
   let seq = 0;
   const insightsEl = document.getElementById("insights");
@@ -857,6 +936,7 @@
       saveLoc();
       update();
       updateWeek();
+      updateHourly();
     } catch (e) {
       setZipMsg("郵便番号を調べられませんでした。時間をおくか、地域を選んでください（" + e.message + "）", true);
     } finally {
@@ -868,8 +948,8 @@
 
   // ---- セクションの並び替え（▲▼で動かす。並び順はブラウザに保存）----
   const ORDER_KEY = "weather-practice:order";
-  const DEFAULT_ORDER = ["result", "insights", "outfit", "week"];
-  const SEC_NAMES = { result: "🌤 選んだ日の天気", insights: "📊 この日のポイント", outfit: "👕 おすすめの服装", week: "📅 1週間の予報" };
+  const DEFAULT_ORDER = ["result", "hourly", "insights", "outfit", "week"];
+  const SEC_NAMES = { result: "🌤 選んだ日の天気", hourly: "🕒 時間ごとの天気", insights: "📊 この日のポイント", outfit: "👕 おすすめの服装", week: "📅 1週間の予報" };
   const sectionsEl = document.getElementById("sections");
   const editBtn = document.getElementById("editBtn");
   const resetOrderBtn = document.getElementById("resetOrderBtn");
@@ -940,10 +1020,11 @@
   });
   applyOrder(loadOrder());
 
-  regionEl.addEventListener("change", function () { saveLoc(); refreshDefaultUi(); update(); updateWeek(); });
+  regionEl.addEventListener("change", function () { saveLoc(); refreshDefaultUi(); update(); updateWeek(); updateHourly(); });
   dateEl.addEventListener("change", update);
   update();
   updateWeek();
+  updateHourly();
 </script>
 </body>
 </html>
