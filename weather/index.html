@@ -59,6 +59,38 @@
   .rain strong.none { font-size: 1rem; color: #868e96; line-height: 2.4rem; }
   .message { color: #5a6b7c; }
   .error { color: #c92a2a; }
+  .card {
+    margin-top: 16px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .card ul { margin: 0; padding-left: 1.2em; line-height: 1.8; }
+  .note { font-size: 0.75rem; color: #868e96; margin: 10px 0 0; }
+  .week-row {
+    display: grid;
+    grid-template-columns: 4.6em 1fr auto 3em;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 0;
+    border-top: 1px solid #e9eef3;
+    font-size: 0.9rem;
+  }
+  .week-row:first-of-type { border-top: none; }
+  .week-row .wd { color: #5a6b7c; }
+  .week-row .t-max { color: #d9480f; font-weight: bold; }
+  .week-row .t-min { color: #1971c2; font-weight: bold; }
+  .week-row .pop { text-align: right; color: #2b8a3e; }
+  .sign-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .sign-row select { margin-bottom: 0; }
+  .fortune-day { margin-bottom: 14px; }
+  .fortune-day:last-of-type { margin-bottom: 0; }
+  .fortune-head { font-weight: bold; margin-bottom: 4px; }
+  .rank { color: #e8590c; }
+  details { margin-top: 8px; font-size: 0.9rem; }
+  details ol { margin: 6px 0 0; padding-left: 1.6em; line-height: 1.7; }
   footer {
     font-size: 0.8rem;
     color: #5a6b7c;
@@ -79,6 +111,12 @@
   </div>
   <div class="result" id="result">
     <p class="message">地域と日付を選んでください。</p>
+  </div>
+  <div class="card" id="outfit" hidden></div>
+  <div class="card" id="horoscope" hidden></div>
+  <div class="card" id="week">
+    <h2>1週間の予報</h2>
+    <p class="message">読み込み中…</p>
   </div>
 </main>
 <footer>
@@ -183,6 +221,209 @@
 
   function show(html) { resultEl.innerHTML = html; }
 
+  const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const todayStr = toYMD(today);
+  const tomorrowStr = toYMD(tomorrow);
+
+  function ymdLabel(ymd) {
+    const p = ymd.split("-");
+    const dt = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    return Number(p[1]) + "/" + Number(p[2]) + "(" + WEEKDAYS[dt.getDay()] + ")";
+  }
+
+  // 雨・雪の天気コードか
+  function isRainy(code) {
+    return (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95;
+  }
+  function isSnowy(code) {
+    return (code >= 71 && code <= 77) || code === 85 || code === 86;
+  }
+
+  // おすすめの服装（最高・最低気温、降水確率、天気コードから決める）
+  function outfitAdvice(max, min, rain, code) {
+    const items = [];
+    if (max >= 30) items.push("半袖・薄手のワンピースなど、涼しい服装。帽子と水分補給も忘れずに");
+    else if (max >= 25) items.push("半袖で過ごせる暖かさ。日差し対策に薄手の羽織りがあると安心");
+    else if (max >= 20) items.push("長袖シャツや薄手のカーディガンがちょうどいい暖かさ");
+    else if (max >= 15) items.push("薄手のセーターやパーカーに、軽めの上着を");
+    else if (max >= 10) items.push("厚手のニットに、コートやジャケットを");
+    else if (max >= 5) items.push("冬用のコートに、マフラーや手袋を");
+    else items.push("ダウンなどの防寒着に、マフラー・手袋・ニット帽を");
+
+    if (min <= 12 && max >= 20) items.push("朝晩は冷えるので、脱ぎ着しやすい上着を持っていくと◎");
+    else if (max - min >= 10) items.push("昼と朝晩の気温差が大きいので、重ね着で調整を");
+
+    if (isSnowy(code)) items.push("雪の予報。滑りにくい靴と、防寒・防水の備えを");
+    else if (rain !== null && rain >= 50) items.push("雨の可能性が高いので、傘と濡れても困らない靴を");
+    else if (isRainy(code)) items.push("雨の予報なので、傘があると安心");
+    else if (rain !== null && rain >= 30) items.push("降るかもしれないので、折りたたみ傘があると安心");
+    return items;
+  }
+
+  // ---- 星座占い（エンタメ用。日付と星座から、このページ内で毎回同じ結果を作る。外部サービスは使わない）----
+  const SIGNS = [
+    { name: "おひつじ座", period: "3/21〜4/19" }, { name: "おうし座", period: "4/20〜5/20" },
+    { name: "ふたご座", period: "5/21〜6/21" }, { name: "かに座", period: "6/22〜7/22" },
+    { name: "しし座", period: "7/23〜8/22" }, { name: "おとめ座", period: "8/23〜9/22" },
+    { name: "てんびん座", period: "9/23〜10/23" }, { name: "さそり座", period: "10/24〜11/22" },
+    { name: "いて座", period: "11/23〜12/21" }, { name: "やぎ座", period: "12/22〜1/19" },
+    { name: "みずがめ座", period: "1/20〜2/18" }, { name: "うお座", period: "2/19〜3/20" }
+  ];
+  const LUCKY_COLORS = ["赤", "オレンジ", "黄色", "緑", "水色", "青", "紫", "ピンク", "白", "黒", "ベージュ", "ゴールド"];
+  const FORTUNE_GOOD = [
+    "思い切って一歩踏み出すと、いい流れに乗れそう。",
+    "周りの人に感謝を伝えると、うれしい返事がありそう。",
+    "ひらめきが冴える日。気になったことはすぐメモを。"
+  ];
+  const FORTUNE_NORMAL = [
+    "いつもどおりが吉。小さな楽しみを1つ作ってみて。",
+    "焦らずマイペースで。休憩をこまめにとると調子が上がります。",
+    "身近な人との会話に、ヒントが隠れていそう。"
+  ];
+  const FORTUNE_CAREFUL = [
+    "慌てず確認を丁寧に。早めの帰宅でゆっくり休んで。",
+    "無理は禁物。人に頼ることで、うまく回りそう。",
+    "小さなミスに注意。深呼吸してから動き出して。"
+  ];
+
+  function hashSeed(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  function makeRng(seed) {
+    let a = seed;
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // その日の12星座の順位（1〜12位）を作る
+  function dailyRanking(dateStr) {
+    const rng = makeRng(hashSeed("rank:" + dateStr));
+    const order = SIGNS.map(function (_, i) { return i; });
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+    }
+    return order; // order[0] が1位の星座の番号
+  }
+  function fortuneFor(signIndex, dateStr) {
+    const order = dailyRanking(dateStr);
+    const rank = order.indexOf(signIndex) + 1;
+    const rng = makeRng(hashSeed("detail:" + dateStr + ":" + signIndex));
+    const pool = rank <= 3 ? FORTUNE_GOOD : (rank <= 8 ? FORTUNE_NORMAL : FORTUNE_CAREFUL);
+    return {
+      rank: rank,
+      color: LUCKY_COLORS[Math.floor(rng() * LUCKY_COLORS.length)],
+      message: pool[Math.floor(rng() * pool.length)],
+      order: order
+    };
+  }
+
+  const SIGN_KEY = "weather-practice:sign";
+  function loadSign() {
+    try {
+      const v = Number(localStorage.getItem(SIGN_KEY));
+      if (Number.isInteger(v) && v >= 0 && v < SIGNS.length) return v;
+    } catch (e) { /* 保存できない環境では初期値を使う */ }
+    return 0;
+  }
+  function saveSign(v) {
+    try { localStorage.setItem(SIGN_KEY, String(v)); } catch (e) { /* 何もしない */ }
+  }
+  let signIndex = loadSign();
+
+  const outfitEl = document.getElementById("outfit");
+  const horoscopeEl = document.getElementById("horoscope");
+  const weekEl = document.getElementById("week");
+
+  // 今日・明日のおすすめの服装（1週間の予報のデータを使う）
+  function renderOutfit(d) {
+    let body = "";
+    [["今日", 0], ["明日", 1]].forEach(function (pair) {
+      const i = pair[1];
+      const rain = d.precipitation_probability_max[i];
+      const items = outfitAdvice(
+        d.temperature_2m_max[i], d.temperature_2m_min[i],
+        (rain === null || rain === undefined) ? null : rain, d.weather_code[i]
+      );
+      body += '<div class="fortune-day"><div class="fortune-head">' + pair[0] + "（" + ymdLabel(d.time[i]) + "）</div><ul>"
+        + items.map(function (t) { return "<li>" + t + "</li>"; }).join("")
+        + "</ul></div>";
+    });
+    outfitEl.innerHTML = "<h2>👕 今日・明日のおすすめの服装</h2>" + body
+      + '<p class="note">※ 選んだ地域の気温・降水確率から決めています。</p>';
+    outfitEl.hidden = false;
+  }
+
+  function renderHoroscope() {
+    const sel = SIGNS.map(function (g, i) {
+      return '<option value="' + i + '"' + (i === signIndex ? " selected" : "") + ">" + g.name + "（" + g.period + "）</option>";
+    }).join("");
+    let body = "";
+    [["今日", todayStr], ["明日", tomorrowStr]].forEach(function (pair) {
+      const f = fortuneFor(signIndex, pair[1]);
+      const list = f.order.map(function (si) { return "<li>" + SIGNS[si].name + "</li>"; }).join("");
+      body += '<div class="fortune-day">'
+        + '<div class="fortune-head">' + pair[0] + "（" + ymdLabel(pair[1]) + "）　" + '<span class="rank">' + f.rank + "位</span></div>"
+        + "<div>ラッキーカラー: " + f.color + "</div>"
+        + "<div>" + f.message + "</div>"
+        + "<details><summary>12星座のランキング</summary><ol>" + list + "</ol></details>"
+        + "</div>";
+    });
+    horoscopeEl.innerHTML = "<h2>🔮 今日・明日の星座占い</h2>"
+      + '<div class="sign-row"><select id="sign" aria-label="星座">' + sel + "</select></div>"
+      + body
+      + '<p class="note">※ 星座占いはお楽しみ用です。日付と星座から、このページの中で作っています（天気データとは関係ありません）。</p>';
+    horoscopeEl.hidden = false;
+    document.getElementById("sign").addEventListener("change", function (e) {
+      signIndex = Number(e.target.value);
+      saveSign(signIndex);
+      renderHoroscope();
+    });
+  }
+
+  // 1週間の予報（今日から7日間。選んだ地域に合わせる）
+  async function updateWeek() {
+    const region = REGIONS[regionEl.value];
+    weekEl.innerHTML = '<h2>1週間の予報</h2><p class="message">読み込み中…</p>';
+    const url = "https://api.open-meteo.com/v1/forecast"
+      + "?latitude=" + region.lat
+      + "&longitude=" + region.lon
+      + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+      + "&timezone=Asia%2FTokyo&forecast_days=7";
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const d = (await res.json()).daily;
+      let rows = "";
+      for (let i = 0; i < d.time.length; i++) {
+        const pop = d.precipitation_probability_max[i];
+        rows += '<div class="week-row">'
+          + '<div class="wd">' + ymdLabel(d.time[i]) + "</div>"
+          + "<div>" + weatherText(d.weather_code[i]) + "</div>"
+          + '<div><span class="t-max">' + Math.round(d.temperature_2m_max[i]) + '℃</span> / <span class="t-min">'
+          + Math.round(d.temperature_2m_min[i]) + "℃</span></div>"
+          + '<div class="pop">' + (pop === null || pop === undefined ? "-" : Math.round(pop) + "%") + "</div>"
+          + "</div>";
+      }
+      renderOutfit(d);
+      weekEl.innerHTML = "<h2>1週間の予報（" + region.name + "）</h2>" + rows
+        + '<p class="note">右端は降水確率です。</p>';
+    } catch (e) {
+      outfitEl.hidden = true;
+      weekEl.innerHTML = '<h2>1週間の予報</h2><p class="error">取得できませんでした。（' + e.message + "）</p>";
+    }
+  }
+
   async function update() {
     const region = REGIONS[regionEl.value];
     const date = dateEl.value;
@@ -235,9 +476,11 @@
     }
   }
 
-  regionEl.addEventListener("change", update);
+  regionEl.addEventListener("change", function () { update(); updateWeek(); });
   dateEl.addEventListener("change", update);
   update();
+  updateWeek();
+  renderHoroscope();
 </script>
 </body>
 </html>
