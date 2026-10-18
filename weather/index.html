@@ -154,6 +154,17 @@
     margin-bottom: 14px;
     background: #fff;
   }
+  /* iPhone の Safari は、日付の入力欄が、指定した幅を無視して、中身の幅で広がる。はみ出さないよう、幅を固定する */
+  input[type="date"] {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    height: 44px; /* appearance を外すと高さがつぶれることがあるため。郵便番号欄と同じ高さ */
+    -webkit-appearance: none;
+    appearance: none;
+    text-align: left;
+  }
+  input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   .controls > :last-child { margin-bottom: 0; }
   .result {
     margin-top: 16px;
