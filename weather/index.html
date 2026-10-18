@@ -311,6 +311,12 @@
     text-align: center;
   }
   footer a { color: #0b5cad; }
+  .footer-note {
+    margin: 10px 0 0; padding-top: 10px; border-top: 1px solid #d5dde5;
+    font-size: 0.75rem; line-height: 1.7; text-align: left;
+  }
+  .footer-note strong { display: block; margin-bottom: 2px; }
+  .footer-note + .footer-note { border-top: none; margin-top: 6px; padding-top: 0; } /* 2つ目は、区切りの線なしで、続けて表示 */
 </style>
 </head>
 <body data-weather="default">
@@ -385,6 +391,14 @@
 <footer>
   天気データ: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>）<br>
   郵便番号検索: <a href="https://zipcloud.ibsnet.co.jp/" target="_blank" rel="noopener">zipcloud</a> ／ 住所から位置を調べる: 国土地理院
+  <p class="footer-note">
+    <strong>このページの天気について</strong>
+    天気・気温・降水確率は、Open-Meteo（海外の気象データサービス）の数値予報モデルの計算結果です。<b>気象庁が発表する予報ではなく</b>、実際の天気とは異なることがあります。大雨・台風・雷など、防災や安全に関わる判断には、<a href="https://www.jma.go.jp/" target="_blank" rel="noopener">気象庁</a>の情報を確認してください。「雨の時間帯」「おすすめの服装」「予報の答え合わせ」は、この計算結果をもとにした目安です。
+  </p>
+  <p class="footer-note">
+    <strong>入力した情報について</strong>
+    天気を調べるため、選んだ地点の緯度・経度が Open-Meteo に送られます。郵便番号は zipcloud に、そこから調べた住所は国土地理院に、あなたのブラウザから直接送られます。いずれも、このサイトのサーバーには送られません。選んだ地域などの設定は、お使いのブラウザの中にだけ保存されます。
+  </p>
 </footer>
 
 <script>
@@ -873,7 +887,7 @@
       }
       renderOutfit(d);
       weekEl.innerHTML = "<h2>1週間の予報（" + esc(region.name) + "）</h2>" + rows
-        + '<p class="note">右端は降水確率です。</p>';
+        + '<p class="note">右端は降水確率です。Open-Meteo の数値予報の計算結果で、気象庁の発表ではありません。</p>';
     } catch (e) {
       if (my !== weekSeq) return;
       outfitEl.hidden = true;
@@ -1163,7 +1177,7 @@
         html += "</div>";
       });
       el.innerHTML = "<h2>🕒 今日・明日の時間ごとの天気（" + esc(region.name) + "）</h2>" + html
-        + '<p class="note">3時間ごとの天気・気温・降水確率です。天気は、その3時間でいちばん悪い天気を表示しています。青い枠は、いまの時間帯です。</p>';
+        + '<p class="note">3時間ごとの天気・気温・降水確率です。天気は、その3時間でいちばん悪い天気を表示しています。青い枠は、いまの時間帯です。Open-Meteo の数値予報の計算結果で、気象庁の発表ではありません。</p>';
     } catch (e) {
       if (my !== hourSeq) return;
       el.innerHTML = '<h2>🕒 今日・明日の時間ごとの天気</h2><p class="error">取得できませんでした。（' + esc(e.message) + "）</p>";
