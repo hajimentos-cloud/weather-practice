@@ -162,7 +162,8 @@
   .settings-wrap { position: sticky; top: 8px; z-index: 20; display: flex; gap: 8px; margin: 0 0 8px; }
   .settings-wrap[hidden], .today-btn[hidden] { display: none; }
   .today-btn {
-    flex: none; padding: 0 14px; font: inherit; font-size: 0.85rem; font-weight: bold; white-space: nowrap;
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    padding: 0 14px; font: inherit; font-size: 0.85rem; font-weight: bold; white-space: nowrap;
     color: #fff; background: #1971c2; border: 1px solid #1971c2; border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); cursor: pointer;
   }
@@ -325,7 +326,10 @@
       <span class="sb-date" id="sbDate"></span>
       <span class="sb-toggle"><span id="sbLabel">閉じる</span> <span id="sbChev" aria-hidden="true">▴</span></span>
     </button>
-    <button id="todayBtn" class="today-btn" type="button" aria-label="今日の天気に戻る" hidden>↩ 今日</button>
+    <button id="todayBtn" class="today-btn" type="button" aria-label="今日の天気に戻る" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v6"/></svg>
+      <span>今日</span>
+    </button>
   </div>
   <div class="controls" id="settingsPanel">
     <label for="zip">郵便番号で探す</label>
