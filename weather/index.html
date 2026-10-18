@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#d6e9f8">
+<!-- ホーム画面に追加したときのアイコン・名前（iPhone の Safari 用） -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="お天気">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>お天気チェック</title>
 <style>
   * { box-sizing: border-box; }
@@ -1266,6 +1273,13 @@
   dateEl.addEventListener("change", update);
   refreshScene(true);
   setInterval(function () { refreshScene(false); }, 60000);
+  // ホーム画面から開いたアプリには更新ボタンがない。15分以上バックグラウンドにいたあと戻ってきたら、読み直す（日付・天気を最新にする）
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (hiddenAt && Date.now() - hiddenAt > 15 * 60 * 1000) location.reload();
+    hiddenAt = 0;
+  });
   update();
   updateWeek();
   updateHourly();
