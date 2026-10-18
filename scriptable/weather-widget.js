@@ -20,6 +20,12 @@ const RAIN_THRESHOLD = 50;
 // ========================================
 
 // ---- 場所 ----
+// ウィジェットは幅が狭いので、場所の名前は、長いと切り詰める（max 文字まで）
+function displayName(loc, max) {
+  const base = loc.short || loc.name;
+  return base.length > max ? base.slice(0, max) + "…" : base;
+}
+
 function onlyDigits(text) {
   return String(text || "")
     .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
@@ -30,7 +36,10 @@ function onlyDigits(text) {
 async function lookupZip(zip) {
   const key = "weather-widget:zip:" + zip;
   if (Keychain.contains(key)) {
-    try { return JSON.parse(Keychain.get(key)); } catch (e) { /* 読めなければ調べ直す */ }
+    try {
+      const cached = JSON.parse(Keychain.get(key));
+      if (cached && cached.short) return cached; // 短い名前がない古い保存データは、調べ直す
+    } catch (e) { /* 読めなければ調べ直す */ }
   }
   const z = await new Request("https://zipcloud.ibsnet.co.jp/api/search?zipcode=" + zip).loadJSON();
   if (!z.results || z.results.length === 0) return null;
@@ -45,7 +54,8 @@ async function lookupZip(zip) {
   let pos = await geocode(prefix + town);
   if (!pos && town) pos = await geocode(prefix);
   if (!pos) return null;
-  const loc = { name: r.address2 + town, lat: pos.lat, lon: pos.lon };
+  // name: 全体の名前 / short: ウィジェットに出す短い名前（町名があれば町名、なければ市区町村）
+  const loc = { name: r.address2 + town, short: town || r.address2, lat: pos.lat, lon: pos.lon };
   Keychain.set(key, JSON.stringify(loc));
   return loc;
 }
@@ -65,16 +75,19 @@ async function fetchWeather(loc) {
   const url = "https://api.open-meteo.com/v1/forecast"
     + "?latitude=" + loc.lat + "&longitude=" + loc.lon
     + "&current=temperature_2m,weather_code"
-    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset"
     + "&hourly=precipitation_probability"
     + "&timezone=Asia%2FTokyo&forecast_days=1";
   const j = await new Request(url).loadJSON();
   if (!j.current || !j.daily || j.current.temperature_2m === null || j.current.temperature_2m === undefined) throw new Error("no data");
   const pop = j.daily.precipitation_probability_max[0];
+  const hour = parseInt(j.current.time.slice(11, 13), 10);
+  const nowMin = hour * 60 + parseInt(j.current.time.slice(14, 16), 10);
   return {
     temp: Math.round(j.current.temperature_2m),
     code: j.current.weather_code,
-    hour: parseInt(j.current.time.slice(11, 13), 10),
+    hour: hour,
+    night: isNightAt(nowMin, j.daily.sunrise && j.daily.sunrise[0], j.daily.sunset && j.daily.sunset[0]),
     max: Math.round(j.daily.temperature_2m_max[0]),
     min: Math.round(j.daily.temperature_2m_min[0]),
     pop: (pop === null || pop === undefined) ? null : Math.round(pop),
@@ -83,7 +96,16 @@ async function fetchWeather(loc) {
 }
 
 // ---- 表示用の言葉・アイコン ----
-function isNight(hour) { return hour >= 19 || hour < 5; }
+// 夜かどうか。日の出・日の入りの時刻（API が返す）で決める。時刻が取れなかったときだけ、19〜5時を夜とする
+function minutesOf(isoTime) {
+  if (typeof isoTime !== "string" || isoTime.length < 16) return null;
+  return parseInt(isoTime.slice(11, 13), 10) * 60 + parseInt(isoTime.slice(14, 16), 10);
+}
+function isNightAt(nowMin, sunrise, sunset) {
+  const rise = minutesOf(sunrise), set = minutesOf(sunset);
+  if (rise === null || set === null) return nowMin >= 19 * 60 || nowMin < 5 * 60;
+  return nowMin < rise || nowMin >= set;
+}
 
 function weatherLabel(code) {
   if (code === 0) return "快晴";
@@ -99,6 +121,10 @@ function weatherLabel(code) {
   if (code >= 95) return "雷雨";
   return "不明";
 }
+// 1行ウィジェット用の、短い天気の言葉
+function weatherLabelShort(code) {
+  return code === 2 ? "晴時々曇" : weatherLabel(code);
+}
 function symbolName(code, night) {
   if (code === 0 || code === 1) return night ? "moon.stars.fill" : "sun.max.fill";
   if (code === 2) return night ? "cloud.moon.fill" : "cloud.sun.fill";
@@ -113,7 +139,7 @@ function symbolName(code, night) {
   return "cloud.fill";
 }
 function symbolImage(d) {
-  const s = SFSymbol.named(symbolName(d.code, isNight(d.hour))) || SFSymbol.named("cloud.fill");
+  const s = SFSymbol.named(symbolName(d.code, d.night)) || SFSymbol.named("cloud.fill");
   return s.image;
 }
 
@@ -159,7 +185,7 @@ function buildRectangular(w, d, loc) {
   t1.font = Font.boldSystemFont(14);
   t1.lineLimit = 1;
   t1.minimumScaleFactor = 0.7;
-  const l2 = w.addText(loc.name + "　最高" + d.max + "° 最低" + d.min + "°");
+  const l2 = w.addText(displayName(loc, 6) + "　最高" + d.max + "° 最低" + d.min + "°");
   l2.font = Font.systemFont(11);
   l2.lineLimit = 1;
   l2.minimumScaleFactor = 0.7;
@@ -170,7 +196,7 @@ function buildRectangular(w, d, loc) {
 }
 
 function buildInline(w, d, loc) {
-  const t = w.addText(loc.name + " " + d.temp + "° " + weatherLabel(d.code) + " 降水" + (d.pop === null ? "-" : d.pop + "%"));
+  const t = w.addText(displayName(loc, 4) + " " + d.temp + "° " + weatherLabelShort(d.code) + " " + (d.pop === null ? "-" : d.pop + "%"));
   t.lineLimit = 1;
   t.minimumScaleFactor = 0.6;
 }
@@ -181,7 +207,7 @@ const GRADIENTS = {
   rain: ["#2f3d52", "#4a5c75"], snow: ["#6f8fb0", "#a9c3dc"], storm: ["#221f38", "#3d3858"], night: ["#070b22", "#27386b"]
 };
 function gradientKey(d) {
-  if (isNight(d.hour)) return "night";
+  if (d.night) return "night";
   if (d.code <= 2) return "sunny";
   if (d.code === 3) return "cloudy";
   if (d.code === 45 || d.code === 48) return "fog";
@@ -197,7 +223,7 @@ function buildHome(w, d, loc) {
   w.backgroundGradient = g;
   w.setPadding(14, 14, 14, 14);
 
-  const name = w.addText(loc.name);
+  const name = w.addText(displayName(loc, 10));
   name.font = Font.mediumSystemFont(13);
   name.textColor = Color.white();
   name.lineLimit = 1;
