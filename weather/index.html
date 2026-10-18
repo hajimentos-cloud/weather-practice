@@ -83,14 +83,9 @@
   .week-row .t-max { color: #d9480f; font-weight: bold; }
   .week-row .t-min { color: #1971c2; font-weight: bold; }
   .week-row .pop { text-align: right; color: #2b8a3e; }
-  .sign-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-  .sign-row select { margin-bottom: 0; }
-  .fortune-day { margin-bottom: 14px; }
-  .fortune-day:last-of-type { margin-bottom: 0; }
-  .fortune-head { font-weight: bold; margin-bottom: 4px; }
-  .rank { color: #e8590c; }
-  details { margin-top: 8px; font-size: 0.9rem; }
-  details ol { margin: 6px 0 0; padding-left: 1.6em; line-height: 1.7; }
+  .day-block { margin-bottom: 14px; }
+  .day-block:last-of-type { margin-bottom: 0; }
+  .day-head { font-weight: bold; margin-bottom: 4px; }
   footer {
     font-size: 0.8rem;
     color: #5a6b7c;
@@ -113,7 +108,6 @@
     <p class="message">地域と日付を選んでください。</p>
   </div>
   <div class="card" id="outfit" hidden></div>
-  <div class="card" id="horoscope" hidden></div>
   <div class="card" id="week">
     <h2>1週間の予報</h2>
     <p class="message">読み込み中…</p>
@@ -222,9 +216,6 @@
   function show(html) { resultEl.innerHTML = html; }
 
   const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-  const todayStr = toYMD(today);
-  const tomorrowStr = toYMD(tomorrow);
 
   function ymdLabel(ymd) {
     const p = ymd.split("-");
@@ -261,88 +252,7 @@
     return items;
   }
 
-  // ---- 星座占い（エンタメ用。日付と星座から、このページ内で毎回同じ結果を作る。外部サービスは使わない）----
-  const SIGNS = [
-    { name: "おひつじ座", period: "3/21〜4/19" }, { name: "おうし座", period: "4/20〜5/20" },
-    { name: "ふたご座", period: "5/21〜6/21" }, { name: "かに座", period: "6/22〜7/22" },
-    { name: "しし座", period: "7/23〜8/22" }, { name: "おとめ座", period: "8/23〜9/22" },
-    { name: "てんびん座", period: "9/23〜10/23" }, { name: "さそり座", period: "10/24〜11/22" },
-    { name: "いて座", period: "11/23〜12/21" }, { name: "やぎ座", period: "12/22〜1/19" },
-    { name: "みずがめ座", period: "1/20〜2/18" }, { name: "うお座", period: "2/19〜3/20" }
-  ];
-  const LUCKY_COLORS = ["赤", "オレンジ", "黄色", "緑", "水色", "青", "紫", "ピンク", "白", "黒", "ベージュ", "ゴールド"];
-  const FORTUNE_GOOD = [
-    "思い切って一歩踏み出すと、いい流れに乗れそう。",
-    "周りの人に感謝を伝えると、うれしい返事がありそう。",
-    "ひらめきが冴える日。気になったことはすぐメモを。"
-  ];
-  const FORTUNE_NORMAL = [
-    "いつもどおりが吉。小さな楽しみを1つ作ってみて。",
-    "焦らずマイペースで。休憩をこまめにとると調子が上がります。",
-    "身近な人との会話に、ヒントが隠れていそう。"
-  ];
-  const FORTUNE_CAREFUL = [
-    "慌てず確認を丁寧に。早めの帰宅でゆっくり休んで。",
-    "無理は禁物。人に頼ることで、うまく回りそう。",
-    "小さなミスに注意。深呼吸してから動き出して。"
-  ];
-
-  function hashSeed(str) {
-    let h = 2166136261;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
-  }
-  function makeRng(seed) {
-    let a = seed;
-    return function () {
-      a = (a + 0x6D2B79F5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-
-  // その日の12星座の順位（1〜12位）を作る
-  function dailyRanking(dateStr) {
-    const rng = makeRng(hashSeed("rank:" + dateStr));
-    const order = SIGNS.map(function (_, i) { return i; });
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
-    }
-    return order; // order[0] が1位の星座の番号
-  }
-  function fortuneFor(signIndex, dateStr) {
-    const order = dailyRanking(dateStr);
-    const rank = order.indexOf(signIndex) + 1;
-    const rng = makeRng(hashSeed("detail:" + dateStr + ":" + signIndex));
-    const pool = rank <= 3 ? FORTUNE_GOOD : (rank <= 8 ? FORTUNE_NORMAL : FORTUNE_CAREFUL);
-    return {
-      rank: rank,
-      color: LUCKY_COLORS[Math.floor(rng() * LUCKY_COLORS.length)],
-      message: pool[Math.floor(rng() * pool.length)],
-      order: order
-    };
-  }
-
-  const SIGN_KEY = "weather-practice:sign";
-  function loadSign() {
-    try {
-      const v = Number(localStorage.getItem(SIGN_KEY));
-      if (Number.isInteger(v) && v >= 0 && v < SIGNS.length) return v;
-    } catch (e) { /* 保存できない環境では初期値を使う */ }
-    return 0;
-  }
-  function saveSign(v) {
-    try { localStorage.setItem(SIGN_KEY, String(v)); } catch (e) { /* 何もしない */ }
-  }
-  let signIndex = loadSign();
-
   const outfitEl = document.getElementById("outfit");
-  const horoscopeEl = document.getElementById("horoscope");
   const weekEl = document.getElementById("week");
 
   // 今日・明日のおすすめの服装（1週間の予報のデータを使う）
@@ -355,40 +265,13 @@
         d.temperature_2m_max[i], d.temperature_2m_min[i],
         (rain === null || rain === undefined) ? null : rain, d.weather_code[i]
       );
-      body += '<div class="fortune-day"><div class="fortune-head">' + pair[0] + "（" + ymdLabel(d.time[i]) + "）</div><ul>"
+      body += '<div class="day-block"><div class="day-head">' + pair[0] + "（" + ymdLabel(d.time[i]) + "）</div><ul>"
         + items.map(function (t) { return "<li>" + t + "</li>"; }).join("")
         + "</ul></div>";
     });
     outfitEl.innerHTML = "<h2>👕 今日・明日のおすすめの服装</h2>" + body
       + '<p class="note">※ 選んだ地域の気温・降水確率から決めています。</p>';
     outfitEl.hidden = false;
-  }
-
-  function renderHoroscope() {
-    const sel = SIGNS.map(function (g, i) {
-      return '<option value="' + i + '"' + (i === signIndex ? " selected" : "") + ">" + g.name + "（" + g.period + "）</option>";
-    }).join("");
-    let body = "";
-    [["今日", todayStr], ["明日", tomorrowStr]].forEach(function (pair) {
-      const f = fortuneFor(signIndex, pair[1]);
-      const list = f.order.map(function (si) { return "<li>" + SIGNS[si].name + "</li>"; }).join("");
-      body += '<div class="fortune-day">'
-        + '<div class="fortune-head">' + pair[0] + "（" + ymdLabel(pair[1]) + "）　" + '<span class="rank">' + f.rank + "位</span></div>"
-        + "<div>ラッキーカラー: " + f.color + "</div>"
-        + "<div>" + f.message + "</div>"
-        + "<details><summary>12星座のランキング</summary><ol>" + list + "</ol></details>"
-        + "</div>";
-    });
-    horoscopeEl.innerHTML = "<h2>🔮 今日・明日の星座占い</h2>"
-      + '<div class="sign-row"><select id="sign" aria-label="星座">' + sel + "</select></div>"
-      + body
-      + '<p class="note">※ 星座占いはお楽しみ用です。日付と星座から、このページの中で作っています（天気データとは関係ありません）。</p>';
-    horoscopeEl.hidden = false;
-    document.getElementById("sign").addEventListener("change", function (e) {
-      signIndex = Number(e.target.value);
-      saveSign(signIndex);
-      renderHoroscope();
-    });
   }
 
   // 1週間の予報（今日から7日間。選んだ地域に合わせる）
@@ -480,7 +363,6 @@
   dateEl.addEventListener("change", update);
   update();
   updateWeek();
-  renderHoroscope();
 </script>
 </body>
 </html>
