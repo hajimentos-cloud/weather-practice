@@ -387,6 +387,7 @@
     if (code === 85 || code === 86) return "❄️ にわか雪";
     if (code === 95) return "⛈ 雷雨";
     if (code === 96 || code === 99) return "⛈ 雷雨（ひょうを伴う）";
+    if (code === 97) return "⛈ 激しい雷雨";
     return "不明（コード " + code + "）";
   }
 
@@ -606,14 +607,16 @@
     const daily = "&daily=weather_code,temperature_2m_max,temperature_2m_min";
     const tail = "&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date;
     let d = null;
+    let rain = null;
     if (!tooOldForForecast(date)) {
       d = (await getJson(FORECAST + "?" + loc(region) + daily + ",precipitation_probability_max" + tail)).daily;
+      // 古い日付は天気が空でも、降水確率だけは返ることがある。過去データAPIに切り替えても、これは使う
+      if (d && d.precipitation_probability_max) rain = d.precipitation_probability_max[0];
     }
     if (!d || d.weather_code[0] === null) {
       d = (await getJson(ARCHIVE + "?" + loc(region) + daily + tail)).daily;
     }
     if (!d || !d.time || d.time.length === 0 || d.weather_code[0] === null) return null;
-    const rain = d.precipitation_probability_max ? d.precipitation_probability_max[0] : null;
     return {
       date: d.time[0], code: d.weather_code[0],
       max: d.temperature_2m_max[0], min: d.temperature_2m_min[0],
@@ -1069,7 +1072,7 @@
           const past = isToday && (slot * 3 + 2) < nowH;
           const now = isToday && nowH >= slot * 3 && nowH < slot * 3 + 3;
           const name = weatherText(code);
-          html += '<div class="hcell hc-' + themeFor(code) + (past ? " past" : "") + (now ? " now" : "")
+          html += '<div role="img" class="hcell hc-' + themeFor(code) + (past ? " past" : "") + (now ? " now" : "")
             + '" title="' + (slot * 3) + "〜" + (slot * 3 + 3) + "時 " + esc(name) + '" aria-label="' + (slot * 3) + "時から3時間 " + esc(name) + '">'
             + '<div class="h-time">' + label + "</div>"
             + '<div class="h-icon">' + name.split(" ")[0] + "</div>"
