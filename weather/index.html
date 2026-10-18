@@ -55,6 +55,8 @@
   .temps strong { display: block; font-size: 1.6rem; }
   .max strong { color: #d9480f; }
   .min strong { color: #1971c2; }
+  .rain strong { color: #2b8a3e; }
+  .rain strong.none { font-size: 1rem; color: #868e96; line-height: 2.4rem; }
   .message { color: #5a6b7c; }
   .error { color: #c92a2a; }
   footer {
@@ -191,35 +193,41 @@
     }
     show('<p class="message">読み込み中…</p>');
 
-    const query = "?latitude=" + region.lat
-      + "&longitude=" + region.lon
-      + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-      + "&timezone=Asia%2FTokyo"
-      + "&start_date=" + date
-      + "&end_date=" + date;
-
-    async function fetchDaily(base) {
+    // 降水確率は予報APIだけにある。過去データAPIには無いので、取れない日は「データなし」と表示する
+    async function fetchDaily(base, withRain) {
+      const query = "?latitude=" + region.lat
+        + "&longitude=" + region.lon
+        + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
+        + (withRain ? ",precipitation_probability_max" : "")
+        + "&timezone=Asia%2FTokyo"
+        + "&start_date=" + date
+        + "&end_date=" + date;
       const res = await fetch(base + query);
       if (!res.ok) throw new Error("HTTP " + res.status);
       return (await res.json()).daily;
     }
 
     try {
-      let d = await fetchDaily("https://api.open-meteo.com/v1/forecast");
+      let d = await fetchDaily("https://api.open-meteo.com/v1/forecast", true);
       // 古い日付は予報APIだと空になるため、同じ Open-Meteo の過去データAPIで取り直す
       if (d && d.weather_code && d.weather_code[0] === null) {
-        d = await fetchDaily("https://archive-api.open-meteo.com/v1/archive");
+        d = await fetchDaily("https://archive-api.open-meteo.com/v1/archive", false);
       }
       if (!d || !d.time || d.time.length === 0 || d.weather_code[0] === null) {
         show('<p class="error">この日のデータがありません。別の日付で試してください。</p>');
         return;
       }
+      const rain = d.precipitation_probability_max ? d.precipitation_probability_max[0] : null;
+      const rainHtml = (rain === null || rain === undefined)
+        ? '<strong class="none">データなし</strong>'
+        : "<strong>" + Math.round(rain) + "%</strong>";
       show(
         '<div class="date">' + region.name + "　" + d.time[0] + "</div>"
         + '<div class="weather">' + weatherText(d.weather_code[0]) + "</div>"
         + '<div class="temps">'
         + '<div class="max">最高気温<strong>' + Math.round(d.temperature_2m_max[0]) + "℃</strong></div>"
         + '<div class="min">最低気温<strong>' + Math.round(d.temperature_2m_min[0]) + "℃</strong></div>"
+        + '<div class="rain">降水確率' + rainHtml + "</div>"
         + "</div>"
       );
     } catch (e) {
