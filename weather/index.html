@@ -97,6 +97,16 @@
   .land { position: absolute; left: 0; bottom: 0; width: 100%; height: 120px; }
   .greeting { text-align: center; margin: -10px 0 16px; font-size: 0.85rem; color: var(--fg); }
   #sky.still * { animation: none !important; transition: none !important; }
+  /* 一番上に戻るボタン: 下にスクロールしたときだけ、右下に出る */
+  .to-top {
+    position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 30;
+    width: 48px; height: 48px; padding: 0; border-radius: 50%;
+    font: inherit; font-size: 1.4rem; line-height: 1; color: #fff;
+    background: #1971c2; border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .to-top.show { opacity: 1; pointer-events: auto; }
   #fx { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
   main, footer { position: relative; z-index: 1; }
   .drop {
@@ -303,6 +313,7 @@
 </style>
 </head>
 <body data-weather="default">
+<button id="toTopBtn" class="to-top" type="button" aria-label="一番上に戻る" tabindex="-1">↑</button>
 <div id="sky" aria-hidden="true"></div>
 <div id="fx" aria-hidden="true"></div>
 <main>
@@ -1176,6 +1187,19 @@
     dateEl.dispatchEvent(new Event("change")); // カレンダーで選んだときと同じ処理が動く
     window.scrollTo(0, 0); // 下までスクロールしていても、すぐ上に戻って、今日の天気が見えるようにする
   });
+  // 一番上に戻るボタン: 1画面ぶんほど下にスクロールしたときだけ、右下に出す
+  const toTopBtn = document.getElementById("toTopBtn");
+  function updateToTop() {
+    const show = window.scrollY > 600;
+    toTopBtn.classList.toggle("show", show);
+    toTopBtn.tabIndex = show ? 0 : -1; // 見えていないときは、キーボードで選べないようにする
+  }
+  // スクロール位置を見て、クラスを切り替えるだけの軽い処理なので、そのまま動かす
+  window.addEventListener("scroll", updateToTop, { passive: true });
+  toTopBtn.addEventListener("click", function () {
+    window.scrollTo(0, 0); // 「今日」ボタンと同じく、すぐ一番上に戻る
+  });
+  updateToTop();
   function setSettingsOpen(open, save) {
     settingsPanel.hidden = !open;
     settingsToggle.setAttribute("aria-expanded", String(open));
