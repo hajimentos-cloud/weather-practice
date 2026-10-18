@@ -707,8 +707,15 @@
           if (ranges.length) line = "☂️ 傘が要りそうな時間: <strong>" + ranges.join("、") + "</strong>";
           else if (peak >= 30) line = "🌂 降る可能性は低めですが、" + peakH + "時ごろに" + Math.round(peak) + "%。折りたたみ傘があると安心です";
           else line = "🌞 " + (date === todayStr ? "今日はこれから、" : "") + "傘はいらなさそうです";
-          html = "<h3>☂️ 雨の時間帯（降水確率）</h3><div>" + line + "</div>"
-            + bars(p, 100, function (v) { return v !== null && v >= 50; }, nowH);
+          if (peak < 20) {
+            // 雨の心配がほとんどない日は、平らな棒が並ぶだけで、何のグラフかわかりにくい。グラフは出さず、言葉だけで伝える
+            html = "<h3>☂️ 雨の時間帯</h3><div>" + line + "</div>"
+              + '<p class="note">降水確率は、' + (date === todayStr ? "この先、" : "1日を通して、") + "最大 " + Math.round(peak) + "% です。</p>";
+          } else {
+            html = "<h3>☂️ 雨の時間帯（降水確率）</h3><div>" + line + "</div>"
+              + bars(p, 100, function (v) { return v !== null && v >= 50; }, nowH)
+              + '<p class="note">棒の高さは、1時間ごとの降水確率です。濃い青は、50%以上の時間です。</p>';
+          }
         }
       } else {
         let j = null;
@@ -727,8 +734,14 @@
           const line = ranges.length
             ? "☔ 雨が降っていた時間: <strong>" + ranges.join("、") + "</strong>（1日の合計 " + total.toFixed(1) + "mm）"
             : "☀️ まとまった雨は降っていませんでした（1日の合計 " + total.toFixed(1) + "mm）";
-          html = "<h3>☂️ 雨の時間帯（降水量）</h3><div>" + line + "</div>"
-            + bars(mm, 5, function (v) { return v !== null && v >= 0.5; }, 0);
+          if (!ranges.length) {
+            // 雨が降っていない日は、グラフを出さず、言葉だけで伝える
+            html = "<h3>☂️ 雨の時間帯</h3><div>" + line + "</div>";
+          } else {
+            html = "<h3>☂️ 雨の時間帯（降水量）</h3><div>" + line + "</div>"
+              + bars(mm, 5, function (v) { return v !== null && v >= 0.5; }, 0)
+              + '<p class="note">棒の高さは、1時間ごとの降水量です(5mmで最大)。濃い青は、0.5mm以上の時間です。</p>';
+          }
         }
       }
       if (my === seq) el.innerHTML = html;
