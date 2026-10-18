@@ -36,9 +36,7 @@
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
-    background: var(--bg);
-    background-repeat: no-repeat;
-    background-attachment: fixed;
+    background: var(--bg); /* 予備。実際に見える背景は、画面に固定した #sky の層に描く */
     color: var(--fg);
     min-height: 100vh;
     display: flex;
@@ -47,7 +45,7 @@
   }
   /* 雨・雪・太陽の動き（背景の後ろ。操作はじゃましない） */
   /* 空・景色（天気・時間帯・季節で毎日変わる。カードの後ろ） */
-  #sky { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+  #sky { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; background: var(--bg); }
   #sky .wx-overlay { position: absolute; inset: 0; background: var(--overlay); }
   .star { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; animation: twinkle 3s ease-in-out infinite; }
   .star.w { width: 3px; height: 3px; background: #fff; box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.7); }
@@ -124,7 +122,10 @@
     color: var(--fg); font-size: 0.85rem; font-weight: bold;
   }
   body.editing .sec > .result, body.editing .sec > .card { margin-top: 6px; outline: 2px dashed rgba(25, 113, 194, 0.55); }
-  .sec-bar .name { flex: 1; }
+  .sec-bar .name {
+    margin-right: auto; padding: 4px 10px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9); color: #1f2d3d;
+  }
   .sec-bar button {
     width: 40px; height: 32px; font-size: 0.95rem; border-radius: 8px; cursor: pointer;
     border: 1px solid #b8c6d4; background: #fff; color: #1f2d3d;
@@ -299,7 +300,7 @@
     </section>
     <section class="sec" data-id="insights">
       <div class="card" id="insights" hidden>
-        <h2>この日のポイント</h2>
+        <h2 id="insightsTitle">📌 選んだ日の詳細</h2>
         <div class="insight" id="rainBlock"></div>
         <div class="insight" id="compareBlock"></div>
         <div class="insight" id="verifyBlock"></div>
@@ -387,6 +388,7 @@
     if (code === 85 || code === 86) return "❄️ にわか雪";
     if (code === 95) return "⛈ 雷雨";
     if (code === 96 || code === 99) return "⛈ 雷雨（ひょうを伴う）";
+    if (code === 97) return "⛈ 激しい雷雨";
     return "不明（コード " + code + "）";
   }
 
@@ -606,14 +608,16 @@
     const daily = "&daily=weather_code,temperature_2m_max,temperature_2m_min";
     const tail = "&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date;
     let d = null;
+    let rain = null;
     if (!tooOldForForecast(date)) {
       d = (await getJson(FORECAST + "?" + loc(region) + daily + ",precipitation_probability_max" + tail)).daily;
+      // 古い日付は天気が空でも、降水確率だけは返ることがある。過去データAPIに切り替えても、これは使う
+      if (d && d.precipitation_probability_max) rain = d.precipitation_probability_max[0];
     }
     if (!d || d.weather_code[0] === null) {
       d = (await getJson(ARCHIVE + "?" + loc(region) + daily + tail)).daily;
     }
     if (!d || !d.time || d.time.length === 0 || d.weather_code[0] === null) return null;
-    const rain = d.precipitation_probability_max ? d.precipitation_probability_max[0] : null;
     return {
       date: d.time[0], code: d.weather_code[0],
       max: d.temperature_2m_max[0], min: d.temperature_2m_min[0],
@@ -1069,7 +1073,7 @@
           const past = isToday && (slot * 3 + 2) < nowH;
           const now = isToday && nowH >= slot * 3 && nowH < slot * 3 + 3;
           const name = weatherText(code);
-          html += '<div class="hcell hc-' + themeFor(code) + (past ? " past" : "") + (now ? " now" : "")
+          html += '<div role="img" class="hcell hc-' + themeFor(code) + (past ? " past" : "") + (now ? " now" : "")
             + '" title="' + (slot * 3) + "〜" + (slot * 3 + 3) + "時 " + esc(name) + '" aria-label="' + (slot * 3) + "時から3時間 " + esc(name) + '">'
             + '<div class="h-time">' + label + "</div>"
             + '<div class="h-icon">' + name.split(" ")[0] + "</div>"
@@ -1125,7 +1129,9 @@
         + "</div>"
       );
       applyTheme(d.code);
-      // この日のポイント（雨の時間帯・前日と去年との比べ・答え合わせ）
+      // 選んだ日の詳細（雨の時間帯・前日と去年との比べ・答え合わせ）。見出しには、何の日かを出す
+      document.getElementById("insightsTitle").textContent = "📌 "
+        + (date === todayStr ? "今日" : date === addDays(todayStr, 1) ? "明日" : ymdLabel(date)) + "の詳細";
       insightsEl.hidden = false;
       ["rainBlock", "compareBlock", "verifyBlock"].forEach(function (id) {
         document.getElementById(id).innerHTML = '<div class="message">読み込み中…</div>';
@@ -1198,7 +1204,7 @@
   // ---- セクションの並び替え（▲▼で動かす。並び順はブラウザに保存）----
   const ORDER_KEY = "weather-practice:order";
   const DEFAULT_ORDER = ["result", "hourly", "insights", "outfit", "week"];
-  const SEC_NAMES = { result: "🌤 選んだ日の天気", hourly: "🕒 時間ごとの天気", insights: "📊 この日のポイント", outfit: "👕 おすすめの服装", week: "📅 1週間の予報" };
+  const SEC_NAMES = { result: "🌤 選んだ日の天気", hourly: "🕒 時間ごとの天気", insights: "📌 選んだ日の詳細", outfit: "👕 おすすめの服装", week: "📅 1週間の予報" };
   const sectionsEl = document.getElementById("sections");
   const editBtn = document.getElementById("editBtn");
   const resetOrderBtn = document.getElementById("resetOrderBtn");
