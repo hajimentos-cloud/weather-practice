@@ -93,6 +93,13 @@
     background: #1971c2; color: #fff; cursor: pointer;
   }
   .zip-row button:disabled { background: #9bb7d4; cursor: default; }
+  .default-row { margin: -4px 0 14px; }
+  .default-btn {
+    font-size: 0.85rem; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #1971c2; background: #fff; color: #1971c2;
+  }
+  .default-btn.on { background: #1971c2; color: #fff; }
+  .default-msg { font-size: 0.8rem; color: #5a6b7c; margin: 6px 0 0; min-height: 1.2em; }
   .zip-msg { font-size: 0.8rem; color: #5a6b7c; margin: 0 0 14px; min-height: 1.2em; }
   .zip-msg.err { color: #c92a2a; }
   .insight { padding: 10px 0; border-top: 1px solid #e9eef3; }
@@ -122,12 +129,16 @@
   <div class="controls">
     <label for="zip">郵便番号で探す</label>
     <div class="zip-row">
-      <input id="zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例: 1600023（ハイフンなしでもOK）" maxlength="9">
+      <input id="zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例: 1600023" maxlength="9">
       <button id="zipBtn" type="button">設定</button>
     </div>
     <p class="zip-msg" id="zipMsg"></p>
     <label for="region">地域</label>
     <select id="region"></select>
+    <div class="default-row">
+      <button id="defBtn" type="button" class="default-btn"></button>
+      <p class="default-msg" id="defMsg"></p>
+    </div>
     <label for="date">日付</label>
     <input type="date" id="date">
   </div>
@@ -247,6 +258,61 @@
   function saveLoc() {
     try { localStorage.setItem(LOC_KEY, JSON.stringify({ sel: regionEl.value, custom: customLoc })); } catch (e) { /* 何もしない */ }
   }
+  function validCustom(c) {
+    return !!c && typeof c.name === "string" && c.name.length < 100 && Number.isFinite(c.lat) && Number.isFinite(c.lon);
+  }
+  function validSel(sel, custom) {
+    if (sel === "custom") return validCustom(custom);
+    return Number.isInteger(Number(sel)) && Number(sel) >= 0 && Number(sel) < REGIONS.length;
+  }
+
+  // デフォルトの地域（「いつもの地域」。設定すると、開いたときに必ずこの地域から始まる）
+  const DEF_KEY = "weather-practice:default";
+  let defaultLoc = null; // { sel, custom }
+  try {
+    const v = JSON.parse(localStorage.getItem(DEF_KEY));
+    if (v && validSel(v.sel, v.custom)) defaultLoc = { sel: String(v.sel), custom: v.sel === "custom" ? v.custom : null };
+  } catch (e) { /* 読めなければデフォルトなし */ }
+
+  const defBtn = document.getElementById("defBtn");
+  const defMsg = document.getElementById("defMsg");
+  function isDefaultCustom(c) {
+    return !!defaultLoc && defaultLoc.sel === "custom" && !!c
+      && defaultLoc.custom.lat === c.lat && defaultLoc.custom.lon === c.lon;
+  }
+  function isCurrentDefault() {
+    if (!defaultLoc) return false;
+    return regionEl.value === "custom" ? isDefaultCustom(customLoc) : defaultLoc.sel === regionEl.value;
+  }
+  // 一覧の「★」とボタンの表示を、いまの状態に合わせる
+  function refreshDefaultUi() {
+    Array.prototype.forEach.call(regionEl.options, function (opt) {
+      if (opt.value === "custom") {
+        opt.textContent = (isDefaultCustom(customLoc) ? "★ " : "") + "📍 " + customLoc.name;
+      } else {
+        const i = Number(opt.value);
+        opt.textContent = (defaultLoc && defaultLoc.sel === opt.value ? "★ " : "") + REGIONS[i].name;
+      }
+    });
+    const on = isCurrentDefault();
+    defBtn.textContent = on ? "★ デフォルトに設定中（解除する）" : "☆ この地域をデフォルトにする";
+    defBtn.className = "default-btn" + (on ? " on" : "");
+  }
+  defBtn.addEventListener("click", function () {
+    let saved = true;
+    if (isCurrentDefault()) {
+      defaultLoc = null;
+      try { localStorage.removeItem(DEF_KEY); } catch (e) { saved = false; }
+      defMsg.textContent = "デフォルトを解除しました。次回からは、最後に見た地域が最初に出ます。";
+    } else {
+      defaultLoc = { sel: regionEl.value, custom: regionEl.value === "custom" ? { name: customLoc.name, lat: customLoc.lat, lon: customLoc.lon } : null };
+      try { localStorage.setItem(DEF_KEY, JSON.stringify(defaultLoc)); } catch (e) { saved = false; }
+      defMsg.textContent = "デフォルトに設定しました。次回から、開くとこの地域が最初に出ます。";
+    }
+    if (!saved) defMsg.textContent += "（このブラウザでは保存できないため、次回は反映されません）";
+    refreshDefaultUi();
+  });
+
   function setCustom(loc) {
     customLoc = loc;
     let opt = regionEl.querySelector('option[value="custom"]');
@@ -255,19 +321,25 @@
       opt.value = "custom";
       regionEl.insertBefore(opt, regionEl.firstChild);
     }
-    opt.textContent = "📍 " + loc.name;
     regionEl.value = "custom";
+    refreshDefaultUi();
   }
   (function restoreLoc() {
+    // デフォルトがあれば、それを最初に表示する。無ければ、最後に見た地域
+    if (defaultLoc) {
+      if (defaultLoc.sel === "custom") setCustom(defaultLoc.custom);
+      else regionEl.value = defaultLoc.sel;
+      return;
+    }
     try {
       const v = JSON.parse(localStorage.getItem(LOC_KEY));
       if (!v) return;
-      const c = v.custom;
-      if (c && typeof c.name === "string" && c.name.length < 100 && Number.isFinite(c.lat) && Number.isFinite(c.lon)) setCustom(c);
+      if (validCustom(v.custom)) setCustom(v.custom);
       if (v.sel === "custom" && customLoc) regionEl.value = "custom";
-      else if (Number.isInteger(Number(v.sel)) && Number(v.sel) >= 0 && Number(v.sel) < REGIONS.length) regionEl.value = String(Number(v.sel));
+      else if (validSel(v.sel, null)) regionEl.value = String(Number(v.sel));
     } catch (e) { /* 読めなければ初期値のまま */ }
   })();
+  refreshDefaultUi();
 
   function toYMD(d) {
     const y = d.getFullYear();
@@ -672,7 +744,7 @@
   zipBtn.addEventListener("click", applyZip);
   zipEl.addEventListener("keydown", function (e) { if (e.key === "Enter") applyZip(); });
 
-  regionEl.addEventListener("change", function () { saveLoc(); update(); updateWeek(); });
+  regionEl.addEventListener("change", function () { saveLoc(); refreshDefaultUi(); update(); updateWeek(); });
   dateEl.addEventListener("change", update);
   update();
   updateWeek();
