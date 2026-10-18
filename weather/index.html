@@ -83,6 +83,27 @@
   .week-row .t-max { color: #d9480f; font-weight: bold; }
   .week-row .t-min { color: #1971c2; font-weight: bold; }
   .week-row .pop { text-align: right; color: #2b8a3e; }
+  .zip-row { display: flex; gap: 8px; margin-bottom: 6px; }
+  .zip-row input {
+    flex: 1; min-width: 0; font-size: 1rem; padding: 10px;
+    border: 1px solid #b8c6d4; border-radius: 8px; background: #fff;
+  }
+  .zip-row button {
+    font-size: 1rem; padding: 10px 16px; border: none; border-radius: 8px;
+    background: #1971c2; color: #fff; cursor: pointer;
+  }
+  .zip-row button:disabled { background: #9bb7d4; cursor: default; }
+  .zip-msg { font-size: 0.8rem; color: #5a6b7c; margin: 0 0 14px; min-height: 1.2em; }
+  .zip-msg.err { color: #c92a2a; }
+  .insight { padding: 10px 0; border-top: 1px solid #e9eef3; }
+  .insight:first-of-type { border-top: none; padding-top: 0; }
+  .insight h3 { font-size: 0.95rem; margin: 0 0 6px; }
+  .bars { display: flex; align-items: flex-end; gap: 2px; height: 56px; margin: 8px 0 2px; }
+  .bar { flex: 1; background: #4dabf7; border-radius: 2px 2px 0 0; min-height: 2px; }
+  .bar.hot { background: #1971c2; }
+  .bar.past { opacity: 0.35; }
+  .bar-axis { display: flex; justify-content: space-between; font-size: 0.7rem; color: #868e96; }
+  .verdict { font-weight: bold; color: #e8590c; }
   .day-block { margin-bottom: 14px; }
   .day-block:last-of-type { margin-bottom: 0; }
   .day-head { font-weight: bold; margin-bottom: 4px; }
@@ -99,6 +120,12 @@
 <main>
   <h1>お天気チェック</h1>
   <div class="controls">
+    <label for="zip">郵便番号で探す</label>
+    <div class="zip-row">
+      <input id="zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例: 1600023（ハイフンなしでもOK）" maxlength="9">
+      <button id="zipBtn" type="button">設定</button>
+    </div>
+    <p class="zip-msg" id="zipMsg"></p>
     <label for="region">地域</label>
     <select id="region"></select>
     <label for="date">日付</label>
@@ -107,6 +134,12 @@
   <div class="result" id="result">
     <p class="message">地域と日付を選んでください。</p>
   </div>
+  <div class="card" id="insights" hidden>
+    <h2>この日のポイント</h2>
+    <div class="insight" id="rainBlock"></div>
+    <div class="insight" id="compareBlock"></div>
+    <div class="insight" id="verifyBlock"></div>
+  </div>
   <div class="card" id="outfit" hidden></div>
   <div class="card" id="week">
     <h2>1週間の予報</h2>
@@ -114,7 +147,8 @@
   </div>
 </main>
 <footer>
-  天気データ: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>）
+  天気データ: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>）<br>
+  郵便番号検索: <a href="https://zipcloud.ibsnet.co.jp/" target="_blank" rel="noopener">zipcloud</a> ／ 住所から位置を調べる: 国土地理院
 </footer>
 
 <script>
@@ -198,6 +232,43 @@
   });
   regionEl.value = 12; // 東京
 
+  // 地域の記憶（ブラウザに保存。使えない環境では記憶しないだけで、動作には影響しない）
+  const LOC_KEY = "weather-practice:loc";
+  let customLoc = null; // 郵便番号から決めた地点 { name, lat, lon }
+
+  function esc(t) {
+    return String(t).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function currentRegion() {
+    return regionEl.value === "custom" ? customLoc : REGIONS[Number(regionEl.value)];
+  }
+  function saveLoc() {
+    try { localStorage.setItem(LOC_KEY, JSON.stringify({ sel: regionEl.value, custom: customLoc })); } catch (e) { /* 何もしない */ }
+  }
+  function setCustom(loc) {
+    customLoc = loc;
+    let opt = regionEl.querySelector('option[value="custom"]');
+    if (!opt) {
+      opt = document.createElement("option");
+      opt.value = "custom";
+      regionEl.insertBefore(opt, regionEl.firstChild);
+    }
+    opt.textContent = "📍 " + loc.name;
+    regionEl.value = "custom";
+  }
+  (function restoreLoc() {
+    try {
+      const v = JSON.parse(localStorage.getItem(LOC_KEY));
+      if (!v) return;
+      const c = v.custom;
+      if (c && typeof c.name === "string" && c.name.length < 100 && Number.isFinite(c.lat) && Number.isFinite(c.lon)) setCustom(c);
+      if (v.sel === "custom" && customLoc) regionEl.value = "custom";
+      else if (Number.isInteger(Number(v.sel)) && Number(v.sel) >= 0 && Number(v.sel) < REGIONS.length) regionEl.value = String(Number(v.sel));
+    } catch (e) { /* 読めなければ初期値のまま */ }
+  })();
+
   function toYMD(d) {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -215,6 +286,7 @@
 
   function show(html) { resultEl.innerHTML = html; }
 
+  const todayStr = toYMD(today);
   const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
   function ymdLabel(ymd) {
@@ -274,19 +346,207 @@
     outfitEl.hidden = false;
   }
 
-  // 1週間の予報（今日から7日間。選んだ地域に合わせる）
-  async function updateWeek() {
-    const region = REGIONS[regionEl.value];
-    weekEl.innerHTML = '<h2>1週間の予報</h2><p class="message">読み込み中…</p>';
-    const url = "https://api.open-meteo.com/v1/forecast"
-      + "?latitude=" + region.lat
-      + "&longitude=" + region.lon
-      + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
-      + "&timezone=Asia%2FTokyo&forecast_days=7";
+  // ---- データ取得 ----
+  const FORECAST = "https://api.open-meteo.com/v1/forecast";
+  const ARCHIVE = "https://archive-api.open-meteo.com/v1/archive";
+  const PREVRUNS = "https://previous-runs-api.open-meteo.com/v1/forecast";
+
+  async function getJson(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }
+  function addDays(ymd, n) {
+    const p = ymd.split("-").map(Number);
+    return toYMD(new Date(p[0], p[1] - 1, p[2] + n));
+  }
+  function addYears(ymd, n) {
+    const p = ymd.split("-").map(Number);
+    const d = new Date(p[0] + n, p[1] - 1, p[2]);
+    if (d.getMonth() !== p[1] - 1) d.setDate(0); // うるう日は前日に寄せる
+    return toYMD(d);
+  }
+  function loc(region) { return "latitude=" + region.lat + "&longitude=" + region.lon; }
+  // 予報APIが受け付けるのは、およそ92日前まで。それより前は過去データAPIだけを使う
+  function tooOldForForecast(date) { return date < addDays(todayStr, -92); }
+
+  // 1日分の天気。予報API → 空なら過去データAPI。降水確率は予報APIだけにある
+  async function getDaily(region, date) {
+    const daily = "&daily=weather_code,temperature_2m_max,temperature_2m_min";
+    const tail = "&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date;
+    let d = null;
+    if (!tooOldForForecast(date)) {
+      d = (await getJson(FORECAST + "?" + loc(region) + daily + ",precipitation_probability_max" + tail)).daily;
+    }
+    if (!d || d.weather_code[0] === null) {
+      d = (await getJson(ARCHIVE + "?" + loc(region) + daily + tail)).daily;
+    }
+    if (!d || !d.time || d.time.length === 0 || d.weather_code[0] === null) return null;
+    const rain = d.precipitation_probability_max ? d.precipitation_probability_max[0] : null;
+    return {
+      date: d.time[0], code: d.weather_code[0],
+      max: d.temperature_2m_max[0], min: d.temperature_2m_min[0],
+      rain: (rain === undefined ? null : rain)
+    };
+  }
+
+  // 値が true の連続した時間を「15時〜18時」の形にまとめる
+  function hourRanges(flags) {
+    const out = [];
+    let start = null;
+    for (let h = 0; h <= 24; h++) {
+      const on = h < 24 && flags[h];
+      if (on && start === null) start = h;
+      if (!on && start !== null) { out.push(start + "時〜" + h + "時"); start = null; }
+    }
+    return out;
+  }
+  function bars(values, scaleMax, hotFn, pastHours) {
+    let html = '<div class="bars">';
+    for (let h = 0; h < 24; h++) {
+      const v = values[h];
+      const pct = (v === null || v === undefined) ? 2 : Math.max(2, Math.min(100, (v / scaleMax) * 100));
+      html += '<div class="bar' + (hotFn(v) ? " hot" : "") + (h < pastHours ? " past" : "")
+        + '" style="height:' + pct + '%" title="' + h + '時"></div>';
+    }
+    return html + '</div><div class="bar-axis"><span>0時</span><span>6時</span><span>12時</span><span>18時</span><span>24時</span></div>';
+  }
+
+  // 雨の時間帯
+  async function renderRainBlock(my, region, date) {
+    const el = document.getElementById("rainBlock");
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const d = (await res.json()).daily;
+      let html;
+      if (date >= todayStr) {
+        const j = await getJson(FORECAST + "?" + loc(region) + "&hourly=precipitation_probability&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date);
+        const p = j.hourly.precipitation_probability;
+        const nowH = date === todayStr ? new Date().getHours() : 0;
+        const future = p.map(function (v, h) { return h >= nowH ? v : null; });
+        const known = future.filter(function (v) { return v !== null && v !== undefined; });
+        if (known.length === 0) {
+          html = "<h3>☂️ 雨の時間帯</h3><div>この日の1時間ごとのデータはありません。</div>";
+        } else {
+          const ranges = hourRanges(future.map(function (v) { return v !== null && v >= 50; }));
+          const peak = Math.max.apply(null, known);
+          const peakH = future.indexOf(peak);
+          let line;
+          if (ranges.length) line = "☂️ 傘が要りそうな時間: <strong>" + ranges.join("、") + "</strong>";
+          else if (peak >= 30) line = "🌂 降る可能性は低めですが、" + peakH + "時ごろに" + Math.round(peak) + "%。折りたたみ傘があると安心です";
+          else line = "🌞 " + (date === todayStr ? "今日はこれから、" : "") + "傘はいらなさそうです";
+          html = "<h3>☂️ 雨の時間帯（降水確率）</h3><div>" + line + "</div>"
+            + bars(p, 100, function (v) { return v !== null && v >= 50; }, nowH);
+        }
+      } else {
+        let j = null;
+        if (!tooOldForForecast(date)) {
+          j = await getJson(FORECAST + "?" + loc(region) + "&hourly=precipitation&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date);
+        }
+        if (!j || j.hourly.precipitation.every(function (v) { return v === null; })) {
+          j = await getJson(ARCHIVE + "?" + loc(region) + "&hourly=precipitation&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date);
+        }
+        const mm = j.hourly.precipitation;
+        if (mm.every(function (v) { return v === null; })) {
+          html = "<h3>☂️ 雨の時間帯</h3><div>この日のデータはありません。</div>";
+        } else {
+          const total = mm.reduce(function (a, v) { return a + (v || 0); }, 0);
+          const ranges = hourRanges(mm.map(function (v) { return v !== null && v >= 0.5; }));
+          const line = ranges.length
+            ? "☔ 雨が降っていた時間: <strong>" + ranges.join("、") + "</strong>（1日の合計 " + total.toFixed(1) + "mm）"
+            : "☀️ まとまった雨は降っていませんでした（1日の合計 " + total.toFixed(1) + "mm）";
+          html = "<h3>☂️ 雨の時間帯（降水量）</h3><div>" + line + "</div>"
+            + bars(mm, 5, function (v) { return v !== null && v >= 0.5; }, 0);
+        }
+      }
+      if (my === seq) el.innerHTML = html;
+    } catch (e) {
+      if (my === seq) el.innerHTML = '<h3>☂️ 雨の時間帯</h3><div class="error">取得できませんでした。（' + esc(e.message) + "）</div>";
+    }
+  }
+
+  // 前日・去年の同じ日との比べ
+  function diffText(label, a, b) {
+    const r = Math.round(a) - Math.round(b);
+    return r === 0 ? label + "は同じ" : label + "が " + Math.abs(r) + "℃ " + (r > 0 ? "高い" : "低い");
+  }
+  async function renderCompareBlock(my, region, date, d) {
+    const el = document.getElementById("compareBlock");
+    try {
+      const results = await Promise.all([
+        getDaily(region, addDays(date, -1)).catch(function () { return null; }),
+        getDaily(region, addYears(date, -1)).catch(function () { return null; })
+      ]);
+      const prev = results[0], last = results[1];
+      let items = "";
+      if (prev) {
+        items += "<li>前日（" + ymdLabel(prev.date) + "）より、" + diffText("最高気温", d.max, prev.max)
+          + "、" + diffText("最低気温", d.min, prev.min) + "（前日は " + weatherText(prev.code) + "）</li>";
+      }
+      if (last) {
+        items += "<li>去年の同じ日（" + last.date + "）は " + weatherText(last.code) + "、最高 " + Math.round(last.max)
+          + "℃ / 最低 " + Math.round(last.min) + "℃。今年は" + diffText("最高気温", d.max, last.max) + "</li>";
+      }
+      if (my === seq) {
+        el.innerHTML = "<h3>📊 前日・去年との比べ</h3>"
+          + (items ? "<ul>" + items + "</ul>" : "<div>比べるデータが取れませんでした。</div>");
+      }
+    } catch (e) {
+      if (my === seq) el.innerHTML = '<h3>📊 前日・去年との比べ</h3><div class="error">取得できませんでした。</div>';
+    }
+  }
+
+  // 予報の答え合わせ（前日に出ていた予報と、実際の天気を比べる）
+  async function renderVerifyBlock(my, region, date) {
+    const el = document.getElementById("verifyBlock");
+    if (date > todayStr) { el.innerHTML = ""; return; }
+    if (date === todayStr) {
+      el.innerHTML = "<h3>🎯 予報の答え合わせ</h3><div>今日の分は、明日になると見られます。</div>";
+      return;
+    }
+    try {
+      const j = await getJson(PREVRUNS + "?" + loc(region)
+        + "&hourly=temperature_2m,temperature_2m_previous_day1,precipitation,precipitation_previous_day1"
+        + "&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date);
+      const h = j.hourly;
+      function nums(a) { return a.filter(function (v) { return v !== null && v !== undefined; }); }
+      const aT = nums(h.temperature_2m), fT = nums(h.temperature_2m_previous_day1);
+      const aR = nums(h.precipitation), fR = nums(h.precipitation_previous_day1);
+      if (aT.length < 20 || fT.length < 20 || aR.length < 20 || fR.length < 20) {
+        if (my === seq) el.innerHTML = "<h3>🎯 予報の答え合わせ</h3><div>この日の答え合わせに使えるデータがありません。</div>";
+        return;
+      }
+      const sum = function (a) { return a.reduce(function (x, v) { return x + v; }, 0); };
+      const aMax = Math.max.apply(null, aT), fMax = Math.max.apply(null, fT);
+      const aRain = sum(aR), fRain = sum(fR);
+      const aWet = aRain >= 1, fWet = fRain >= 1;
+      const gap = Math.abs(Math.round(aMax) - Math.round(fMax));
+      let verdict;
+      if (aWet === fWet && gap <= 2) verdict = "◎ ほぼ的中";
+      else if (aWet === fWet && gap <= 4) verdict = "○ まずまず";
+      else verdict = "△ ずれがありました";
+      const rainTxt = function (wet, mm) { return wet ? "雨あり（" + mm.toFixed(1) + "mm）" : "雨なし"; };
+      if (my === seq) {
+        el.innerHTML = "<h3>🎯 予報の答え合わせ</h3>"
+          + "<div>前日の予報: 最高 " + Math.round(fMax) + "℃・" + rainTxt(fWet, fRain) + "</div>"
+          + "<div>実際: 最高 " + Math.round(aMax) + "℃・" + rainTxt(aWet, aRain) + "</div>"
+          + '<div class="verdict">' + verdict + "</div>"
+          + '<p class="note">雨あり＝1日の合計が1mm以上。「実際」は予報モデルの解析値で、上の降水量と少し違う場合があります。</p>';
+      }
+    } catch (e) {
+      if (my === seq) el.innerHTML = '<h3>🎯 予報の答え合わせ</h3><div class="error">取得できませんでした。</div>';
+    }
+  }
+
+  // ---- 1週間の予報（今日から7日間。選んだ地域に合わせる）----
+  let weekSeq = 0;
+  async function updateWeek() {
+    const my = ++weekSeq;
+    const region = currentRegion();
+    weekEl.innerHTML = '<h2>1週間の予報</h2><p class="message">読み込み中…</p>';
+    try {
+      const d = (await getJson(FORECAST + "?" + loc(region)
+        + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+        + "&timezone=Asia%2FTokyo&forecast_days=7")).daily;
+      if (my !== weekSeq) return;
       let rows = "";
       for (let i = 0; i < d.time.length; i++) {
         const pop = d.precipitation_probability_max[i];
@@ -299,67 +559,120 @@
           + "</div>";
       }
       renderOutfit(d);
-      weekEl.innerHTML = "<h2>1週間の予報（" + region.name + "）</h2>" + rows
+      weekEl.innerHTML = "<h2>1週間の予報（" + esc(region.name) + "）</h2>" + rows
         + '<p class="note">右端は降水確率です。</p>';
     } catch (e) {
+      if (my !== weekSeq) return;
       outfitEl.hidden = true;
-      weekEl.innerHTML = '<h2>1週間の予報</h2><p class="error">取得できませんでした。（' + e.message + "）</p>";
+      weekEl.innerHTML = '<h2>1週間の予報</h2><p class="error">取得できませんでした。（' + esc(e.message) + "）</p>";
     }
   }
 
+  // ---- 選んだ日の天気 ----
+  let seq = 0;
+  const insightsEl = document.getElementById("insights");
+
   async function update() {
-    const region = REGIONS[regionEl.value];
+    const my = ++seq;
+    const region = currentRegion();
     const date = dateEl.value;
     if (!date) { show('<p class="message">日付を選んでください。</p>'); return; }
     if (date < dateEl.min || date > dateEl.max) {
       show('<p class="error">選べる日付は ' + dateEl.min + ' から ' + dateEl.max + ' までです。</p>');
+      insightsEl.hidden = true;
       return;
     }
     show('<p class="message">読み込み中…</p>');
 
-    // 降水確率は予報APIだけにある。過去データAPIには無いので、取れない日は「データなし」と表示する
-    async function fetchDaily(base, withRain) {
-      const query = "?latitude=" + region.lat
-        + "&longitude=" + region.lon
-        + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-        + (withRain ? ",precipitation_probability_max" : "")
-        + "&timezone=Asia%2FTokyo"
-        + "&start_date=" + date
-        + "&end_date=" + date;
-      const res = await fetch(base + query);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return (await res.json()).daily;
-    }
-
     try {
-      let d = await fetchDaily("https://api.open-meteo.com/v1/forecast", true);
-      // 古い日付は予報APIだと空になるため、同じ Open-Meteo の過去データAPIで取り直す
-      if (d && d.weather_code && d.weather_code[0] === null) {
-        d = await fetchDaily("https://archive-api.open-meteo.com/v1/archive", false);
-      }
-      if (!d || !d.time || d.time.length === 0 || d.weather_code[0] === null) {
+      const d = await getDaily(region, date);
+      if (my !== seq) return;
+      if (!d) {
         show('<p class="error">この日のデータがありません。別の日付で試してください。</p>');
+        insightsEl.hidden = true;
         return;
       }
-      const rain = d.precipitation_probability_max ? d.precipitation_probability_max[0] : null;
-      const rainHtml = (rain === null || rain === undefined)
+      const rainHtml = d.rain === null
         ? '<strong class="none">データなし</strong>'
-        : "<strong>" + Math.round(rain) + "%</strong>";
+        : "<strong>" + Math.round(d.rain) + "%</strong>";
       show(
-        '<div class="date">' + region.name + "　" + d.time[0] + "</div>"
-        + '<div class="weather">' + weatherText(d.weather_code[0]) + "</div>"
+        '<div class="date">' + esc(region.name) + "　" + d.date + "</div>"
+        + '<div class="weather">' + weatherText(d.code) + "</div>"
         + '<div class="temps">'
-        + '<div class="max">最高気温<strong>' + Math.round(d.temperature_2m_max[0]) + "℃</strong></div>"
-        + '<div class="min">最低気温<strong>' + Math.round(d.temperature_2m_min[0]) + "℃</strong></div>"
+        + '<div class="max">最高気温<strong>' + Math.round(d.max) + "℃</strong></div>"
+        + '<div class="min">最低気温<strong>' + Math.round(d.min) + "℃</strong></div>"
         + '<div class="rain">降水確率' + rainHtml + "</div>"
         + "</div>"
       );
+      // この日のポイント（雨の時間帯・前日と去年との比べ・答え合わせ）
+      insightsEl.hidden = false;
+      ["rainBlock", "compareBlock", "verifyBlock"].forEach(function (id) {
+        document.getElementById(id).innerHTML = '<div class="message">読み込み中…</div>';
+      });
+      renderRainBlock(my, region, date);
+      renderCompareBlock(my, region, date, d);
+      renderVerifyBlock(my, region, date);
     } catch (e) {
-      show('<p class="error">天気を取得できませんでした。時間をおいて、もう一度試してください。（' + e.message + "）</p>");
+      if (my !== seq) return;
+      insightsEl.hidden = true;
+      show('<p class="error">天気を取得できませんでした。時間をおいて、もう一度試してください。（' + esc(e.message) + "）</p>");
     }
   }
 
-  regionEl.addEventListener("change", function () { update(); updateWeek(); });
+  // ---- 郵便番号 → その場所の天気 ----
+  const zipEl = document.getElementById("zip");
+  const zipBtn = document.getElementById("zipBtn");
+  const zipMsg = document.getElementById("zipMsg");
+  function setZipMsg(text, isErr) {
+    zipMsg.textContent = text;
+    zipMsg.className = "zip-msg" + (isErr ? " err" : "");
+  }
+  // 国土地理院の住所検索で、住所から緯度・経度を調べる（見つからなければ null）
+  async function geocode(address, prefix) {
+    const list = await getJson("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(address));
+    const hit = list.find(function (f) { return f.properties && f.properties.title && f.properties.title.indexOf(prefix) === 0; });
+    return hit ? { lon: hit.geometry.coordinates[0], lat: hit.geometry.coordinates[1] } : null;
+  }
+  async function applyZip() {
+    const z = zipEl.value
+      .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/[^0-9]/g, "");
+    if (!/^[0-9]{7}$/.test(z)) { setZipMsg("郵便番号は7けたの数字で入れてください（例: 1600023）", true); return; }
+    zipBtn.disabled = true;
+    setZipMsg("調べています…", false);
+    try {
+      const j = await getJson("https://zipcloud.ibsnet.co.jp/api/search?zipcode=" + z);
+      if (!j.results || j.results.length === 0) { setZipMsg("その郵便番号は見つかりませんでした", true); return; }
+      const r = j.results[0];
+      const town = r.address3.indexOf("以下に掲載がない場合") >= 0 ? "" : r.address3.replace(/（.*$/, "");
+      const label = "〒" + z.slice(0, 3) + "-" + z.slice(3) + " " + r.address1 + r.address2 + town;
+      let pos = null;
+      try {
+        pos = await geocode(r.address1 + r.address2 + town, r.address1 + r.address2);
+        if (!pos && town) pos = await geocode(r.address1 + r.address2, r.address1 + r.address2);
+      } catch (e) { /* 位置が調べられなくても、下で県庁所在地に切り替える */ }
+      if (pos) {
+        setCustom({ name: label, lat: pos.lat, lon: pos.lon });
+        setZipMsg(label + " の天気を表示しています", false);
+      } else {
+        const idx = REGIONS.findIndex(function (x) { return x.name.indexOf(r.address1) === 0; });
+        if (idx < 0) { setZipMsg("位置を調べられませんでした。地域を選んでください", true); return; }
+        regionEl.value = String(idx);
+        setZipMsg("ピンポイントの位置が調べられなかったため、" + REGIONS[idx].name + "（県庁所在地）の天気を表示しています", false);
+      }
+      saveLoc();
+      update();
+      updateWeek();
+    } catch (e) {
+      setZipMsg("郵便番号を調べられませんでした。時間をおくか、地域を選んでください（" + e.message + "）", true);
+    } finally {
+      zipBtn.disabled = false;
+    }
+  }
+  zipBtn.addEventListener("click", applyZip);
+  zipEl.addEventListener("keydown", function (e) { if (e.key === "Enter") applyZip(); });
+
+  regionEl.addEventListener("change", function () { saveLoc(); update(); updateWeek(); });
   dateEl.addEventListener("change", update);
   update();
   updateWeek();
