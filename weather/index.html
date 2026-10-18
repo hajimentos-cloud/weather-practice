@@ -55,6 +55,25 @@
   @keyframes glow { from { transform: scale(0.95); opacity: 0.8; } to { transform: scale(1.08); opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { #fx { display: none; } }
   .controls, .result, .card { color: #1f2d3d; }
+  /* 並び替え */
+  .edit-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  .edit-btn {
+    font-size: 0.8rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid #b8c6d4; background: rgba(255, 255, 255, 0.92); color: #1f2d3d;
+  }
+  .edit-btn[aria-pressed="true"] { background: #1971c2; border-color: #1971c2; color: #fff; }
+  .sec-bar { display: none; }
+  body.editing .sec-bar {
+    display: flex; align-items: center; gap: 8px; margin-top: 16px;
+    color: var(--fg); font-size: 0.85rem; font-weight: bold;
+  }
+  body.editing .sec > .result, body.editing .sec > .card { margin-top: 6px; outline: 2px dashed rgba(25, 113, 194, 0.55); }
+  .sec-bar .name { flex: 1; }
+  .sec-bar button {
+    width: 40px; height: 32px; font-size: 0.95rem; border-radius: 8px; cursor: pointer;
+    border: 1px solid #b8c6d4; background: #fff; color: #1f2d3d;
+  }
+  .sec-bar button:disabled { opacity: 0.35; cursor: default; }
   main {
     width: 100%;
     max-width: 480px;
@@ -80,7 +99,7 @@
   }
   .controls > :last-child { margin-bottom: 0; }
   .result {
-    margin-top: 20px;
+    margin-top: 16px;
     background: #fff;
     border-radius: 12px;
     padding: 24px 16px;
@@ -182,19 +201,33 @@
     <label for="date">日付</label>
     <input type="date" id="date">
   </div>
-  <div class="result" id="result">
-    <p class="message">地域と日付を選んでください。</p>
+  <div class="edit-row">
+    <button id="editBtn" type="button" class="edit-btn" aria-pressed="false">↕ 並び替え</button>
+    <button id="resetOrderBtn" type="button" class="edit-btn" hidden>元の順番に戻す</button>
   </div>
-  <div class="card" id="insights" hidden>
-    <h2>この日のポイント</h2>
-    <div class="insight" id="rainBlock"></div>
-    <div class="insight" id="compareBlock"></div>
-    <div class="insight" id="verifyBlock"></div>
-  </div>
-  <div class="card" id="outfit" hidden></div>
-  <div class="card" id="week">
-    <h2>1週間の予報</h2>
-    <p class="message">読み込み中…</p>
+  <div id="sections">
+    <section class="sec" data-id="result">
+      <div class="result" id="result">
+        <p class="message">地域と日付を選んでください。</p>
+      </div>
+    </section>
+    <section class="sec" data-id="insights">
+      <div class="card" id="insights" hidden>
+        <h2>この日のポイント</h2>
+        <div class="insight" id="rainBlock"></div>
+        <div class="insight" id="compareBlock"></div>
+        <div class="insight" id="verifyBlock"></div>
+      </div>
+    </section>
+    <section class="sec" data-id="outfit">
+      <div class="card" id="outfit" hidden></div>
+    </section>
+    <section class="sec" data-id="week">
+      <div class="card" id="week">
+        <h2>1週間の予報</h2>
+        <p class="message">読み込み中…</p>
+      </div>
+    </section>
   </div>
 </main>
 <footer>
@@ -832,6 +865,80 @@
   }
   zipBtn.addEventListener("click", applyZip);
   zipEl.addEventListener("keydown", function (e) { if (e.key === "Enter") applyZip(); });
+
+  // ---- セクションの並び替え（▲▼で動かす。並び順はブラウザに保存）----
+  const ORDER_KEY = "weather-practice:order";
+  const DEFAULT_ORDER = ["result", "insights", "outfit", "week"];
+  const SEC_NAMES = { result: "🌤 選んだ日の天気", insights: "📊 この日のポイント", outfit: "👕 おすすめの服装", week: "📅 1週間の予報" };
+  const sectionsEl = document.getElementById("sections");
+  const editBtn = document.getElementById("editBtn");
+  const resetOrderBtn = document.getElementById("resetOrderBtn");
+
+  function currentOrder() {
+    return Array.prototype.map.call(sectionsEl.children, function (el) { return el.dataset.id; });
+  }
+  function refreshMoveButtons() {
+    const kids = sectionsEl.children;
+    for (let i = 0; i < kids.length; i++) {
+      kids[i].querySelector(".up").disabled = (i === 0);
+      kids[i].querySelector(".down").disabled = (i === kids.length - 1);
+    }
+  }
+  function applyOrder(order) {
+    order.forEach(function (id) { sectionsEl.appendChild(sectionsEl.querySelector('[data-id="' + id + '"]')); });
+    refreshMoveButtons();
+  }
+  function saveOrder() {
+    try { localStorage.setItem(ORDER_KEY, JSON.stringify(currentOrder())); } catch (e) { /* 保存できなくても、この画面では並び替えできる */ }
+  }
+  function loadOrder() {
+    const order = [];
+    try {
+      const v = JSON.parse(localStorage.getItem(ORDER_KEY));
+      if (Array.isArray(v)) v.forEach(function (id) { if (DEFAULT_ORDER.indexOf(id) >= 0 && order.indexOf(id) < 0) order.push(id); });
+    } catch (e) { /* 読めなければ初期の順番 */ }
+    DEFAULT_ORDER.forEach(function (id) { if (order.indexOf(id) < 0) order.push(id); });
+    return order;
+  }
+
+  // 各セクションの上に、名前と ▲▼ ボタンの帯を付ける（並び替え中だけ表示）
+  Array.prototype.forEach.call(sectionsEl.children, function (sec) {
+    const name = SEC_NAMES[sec.dataset.id];
+    const bar = document.createElement("div");
+    bar.className = "sec-bar";
+    bar.innerHTML = '<span class="name">' + name + '</span>'
+      + '<button type="button" class="up" aria-label="' + name + ' を上へ">▲</button>'
+      + '<button type="button" class="down" aria-label="' + name + ' を下へ">▼</button>';
+    sec.insertBefore(bar, sec.firstChild);
+  });
+  sectionsEl.addEventListener("click", function (e) {
+    const btn = e.target.closest("button");
+    if (!btn || !btn.closest(".sec-bar")) return;
+    const sec = btn.closest(".sec");
+    if (btn.classList.contains("up") && sec.previousElementSibling) {
+      sectionsEl.insertBefore(sec, sec.previousElementSibling);
+    } else if (btn.classList.contains("down") && sec.nextElementSibling) {
+      sectionsEl.insertBefore(sec.nextElementSibling, sec);
+    } else {
+      return;
+    }
+    refreshMoveButtons();
+    saveOrder();
+    sec.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+    btn.focus();
+  });
+  editBtn.addEventListener("click", function () {
+    const on = !document.body.classList.contains("editing");
+    document.body.classList.toggle("editing", on);
+    editBtn.setAttribute("aria-pressed", String(on));
+    editBtn.textContent = on ? "✔ 並び替えを終える" : "↕ 並び替え";
+    resetOrderBtn.hidden = !on;
+  });
+  resetOrderBtn.addEventListener("click", function () {
+    applyOrder(DEFAULT_ORDER);
+    try { localStorage.removeItem(ORDER_KEY); } catch (e) { /* 何もしない */ }
+  });
+  applyOrder(loadOrder());
 
   regionEl.addEventListener("change", function () { saveLoc(); refreshDefaultUi(); update(); updateWeek(); });
   dateEl.addEventListener("change", update);
