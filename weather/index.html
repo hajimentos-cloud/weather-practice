@@ -3,19 +3,58 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#d6e9f8">
 <title>お天気チェック</title>
 <style>
   * { box-sizing: border-box; }
+  /* 天気に合わせた背景（body の data-weather で切り替える） */
+  body {
+    --bg: linear-gradient(180deg, #d6e9f8 0%, #eaf3fb 100%);
+    --fg: #1f2d3d;
+    --link: #1971c2;
+  }
+  body[data-weather="sunny"] { --bg: linear-gradient(180deg, #3d9be9 0%, #9ad1ff 55%, #ffe9a8 100%); --fg: #10294a; --link: #0b4f93; }
+  body[data-weather="partly"] { --bg: linear-gradient(180deg, #6fb1e6 0%, #bfdcf2 60%, #eef0f2 100%); --fg: #10294a; --link: #0b4f93; }
+  body[data-weather="cloudy"] { --bg: linear-gradient(180deg, #aab5c2 0%, #cfd6de 60%, #e6eaee 100%); --fg: #1f2d3d; --link: #0b4f93; }
+  body[data-weather="fog"] { --bg: linear-gradient(180deg, #c9ced3 0%, #e1e4e7 100%); --fg: #1f2d3d; --link: #0b4f93; }
+  body[data-weather="rain"] { --bg: linear-gradient(180deg, #2f3d52 0%, #4a5c75 60%, #5a6d86 100%); --fg: #f1f5f9; --link: #a5d8ff; }
+  body[data-weather="snow"] { --bg: linear-gradient(180deg, #9db9d6 0%, #d3e2f0 55%, #f4f8fc 100%); --fg: #12304d; --link: #0b4f93; }
+  body[data-weather="storm"] { --bg: linear-gradient(180deg, #221f38 0%, #3d3858 60%, #514b72 100%); --fg: #f1f5f9; --link: #a5d8ff; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
-    background: #eaf3fb;
-    color: #1f2d3d;
+    background: var(--bg);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    color: var(--fg);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
+  /* 雨・雪・太陽の動き（背景の後ろ。操作はじゃましない） */
+  #fx { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+  main, footer { position: relative; z-index: 1; }
+  .drop {
+    position: absolute; top: -8%; width: 2px; height: 18px; border-radius: 1px;
+    background: rgba(255, 255, 255, 0.5);
+    animation: fall linear infinite;
+  }
+  @keyframes fall { to { transform: translate(-30px, 120vh); } }
+  .flake {
+    position: absolute; top: -4%; width: var(--s); height: var(--s); border-radius: 50%;
+    background: #fff; opacity: 0.85;
+    animation: snow linear infinite;
+  }
+  @keyframes snow { to { transform: translate(var(--dx), 112vh); } }
+  .sun {
+    position: absolute; top: -70px; right: -70px; width: 260px; height: 260px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 244, 170, 0.95) 0%, rgba(255, 244, 170, 0) 70%);
+    animation: glow 6s ease-in-out infinite alternate;
+  }
+  @keyframes glow { from { transform: scale(0.95); opacity: 0.8; } to { transform: scale(1.08); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { #fx { display: none; } }
+  .controls, .result, .card { color: #1f2d3d; }
   main {
     width: 100%;
     max-width: 480px;
@@ -116,14 +155,15 @@
   .day-head { font-weight: bold; margin-bottom: 4px; }
   footer {
     font-size: 0.8rem;
-    color: #5a6b7c;
+    color: var(--fg);
     padding: 16px;
     text-align: center;
   }
-  footer a { color: #1971c2; }
+  footer a { color: var(--link); }
 </style>
 </head>
-<body>
+<body data-weather="default">
+<div id="fx" aria-hidden="true"></div>
 <main>
   <h1>お天気チェック</h1>
   <div class="controls">
@@ -640,6 +680,51 @@
     }
   }
 
+  // ---- 天気に合わせた背景・動き ----
+  const THEME_TOP = { default: "#d6e9f8", sunny: "#3d9be9", partly: "#6fb1e6", cloudy: "#aab5c2", fog: "#c9ced3", rain: "#2f3d52", snow: "#9db9d6", storm: "#221f38" };
+  const fxEl = document.getElementById("fx");
+  const themeColorEl = document.querySelector('meta[name="theme-color"]');
+  const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function themeFor(code) {
+    if (code === 0 || code === 1) return "sunny";
+    if (code === 2) return "partly";
+    if (code === 45 || code === 48) return "fog";
+    if (isSnowy(code)) return "snow";
+    if (code >= 95) return "storm";
+    if (isRainy(code)) return "rain";
+    return "cloudy";
+  }
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function buildFx(theme) {
+    fxEl.innerHTML = "";
+    if (reduceMotion) return;
+    let html = "";
+    if (theme === "rain" || theme === "storm") {
+      const n = theme === "storm" ? 70 : 45;
+      for (let i = 0; i < n; i++) {
+        html += '<span class="drop" style="left:' + rnd(0, 105).toFixed(1) + '%;animation-duration:' + rnd(0.6, 1.1).toFixed(2)
+          + 's;animation-delay:-' + rnd(0, 1.2).toFixed(2) + 's"></span>';
+      }
+    } else if (theme === "snow") {
+      for (let i = 0; i < 40; i++) {
+        const size = rnd(3, 7).toFixed(1);
+        html += '<span class="flake" style="left:' + rnd(0, 100).toFixed(1) + '%;--s:' + size + 'px;--dx:' + rnd(-40, 40).toFixed(0)
+          + 'px;animation-duration:' + rnd(6, 12).toFixed(1) + 's;animation-delay:-' + rnd(0, 12).toFixed(1) + 's"></span>';
+      }
+    } else if (theme === "sunny" || theme === "partly") {
+      html = '<div class="sun"></div>';
+    }
+    fxEl.innerHTML = html;
+  }
+  function applyTheme(code) {
+    const theme = (code === null || code === undefined) ? "default" : themeFor(code);
+    if (document.body.dataset.weather === theme) return;
+    document.body.dataset.weather = theme;
+    if (themeColorEl) themeColorEl.setAttribute("content", THEME_TOP[theme]);
+    buildFx(theme);
+  }
+
   // ---- 選んだ日の天気 ----
   let seq = 0;
   const insightsEl = document.getElementById("insights");
@@ -651,6 +736,7 @@
     if (!date) { show('<p class="message">日付を選んでください。</p>'); return; }
     if (date < dateEl.min || date > dateEl.max) {
       show('<p class="error">選べる日付は ' + dateEl.min + ' から ' + dateEl.max + ' までです。</p>');
+      applyTheme(null);
       insightsEl.hidden = true;
       return;
     }
@@ -661,6 +747,7 @@
       if (my !== seq) return;
       if (!d) {
         show('<p class="error">この日のデータがありません。別の日付で試してください。</p>');
+        applyTheme(null);
         insightsEl.hidden = true;
         return;
       }
@@ -676,6 +763,7 @@
         + '<div class="rain">降水確率' + rainHtml + "</div>"
         + "</div>"
       );
+      applyTheme(d.code);
       // この日のポイント（雨の時間帯・前日と去年との比べ・答え合わせ）
       insightsEl.hidden = false;
       ["rainBlock", "compareBlock", "verifyBlock"].forEach(function (id) {
@@ -687,6 +775,7 @@
     } catch (e) {
       if (my !== seq) return;
       insightsEl.hidden = true;
+      applyTheme(null);
       show('<p class="error">天気を取得できませんでした。時間をおいて、もう一度試してください。（' + esc(e.message) + "）</p>");
     }
   }
