@@ -11,15 +11,21 @@
   body {
     --bg: linear-gradient(180deg, #d6e9f8 0%, #eaf3fb 100%);
     --fg: #1f2d3d;
-    --link: #1971c2;
+   
+   
+    --overlay: transparent;
   }
-  body[data-weather="sunny"] { --bg: linear-gradient(180deg, #3d9be9 0%, #9ad1ff 55%, #ffe9a8 100%); --fg: #10294a; --link: #0b4f93; }
-  body[data-weather="partly"] { --bg: linear-gradient(180deg, #6fb1e6 0%, #bfdcf2 60%, #eef0f2 100%); --fg: #10294a; --link: #0b4f93; }
-  body[data-weather="cloudy"] { --bg: linear-gradient(180deg, #aab5c2 0%, #cfd6de 60%, #e6eaee 100%); --fg: #1f2d3d; --link: #0b4f93; }
-  body[data-weather="fog"] { --bg: linear-gradient(180deg, #c9ced3 0%, #e1e4e7 100%); --fg: #1f2d3d; --link: #0b4f93; }
-  body[data-weather="rain"] { --bg: linear-gradient(180deg, #2f3d52 0%, #4a5c75 60%, #5a6d86 100%); --fg: #f1f5f9; --link: #a5d8ff; }
-  body[data-weather="snow"] { --bg: linear-gradient(180deg, #9db9d6 0%, #d3e2f0 55%, #f4f8fc 100%); --fg: #12304d; --link: #0b4f93; }
-  body[data-weather="storm"] { --bg: linear-gradient(180deg, #221f38 0%, #3d3858 60%, #514b72 100%); --fg: #f1f5f9; --link: #a5d8ff; }
+  body[data-weather="sunny"] { --bg: linear-gradient(180deg, #3d9be9 0%, #9ad1ff 55%, #ffe9a8 100%); --fg: #10294a; }
+  body[data-weather="partly"] { --bg: linear-gradient(180deg, #6fb1e6 0%, #bfdcf2 60%, #eef0f2 100%); --fg: #10294a; }
+  body[data-weather="cloudy"] { --bg: linear-gradient(180deg, #aab5c2 0%, #cfd6de 60%, #e6eaee 100%); --fg: #1f2d3d; }
+  body[data-weather="fog"] { --bg: linear-gradient(180deg, #c9ced3 0%, #e1e4e7 100%); --fg: #1f2d3d; }
+  body[data-weather="rain"] { --bg: linear-gradient(180deg, #2f3d52 0%, #4a5c75 60%, #5a6d86 100%); --fg: #f1f5f9; }
+  body[data-weather="snow"] { --bg: linear-gradient(180deg, #9db9d6 0%, #d3e2f0 55%, #f4f8fc 100%); --fg: #12304d; }
+  body[data-weather="storm"] { --bg: linear-gradient(180deg, #221f38 0%, #3d3858 60%, #514b72 100%); --fg: #f1f5f9; }
+  /* 時間帯（朝焼け・夕焼け・夜）は、天気の色の上に重ねる。昼は天気の色のまま */
+  body[data-phase="dawn"] { --bg: linear-gradient(180deg, #34336b 0%, #c06a9a 45%, #ffb47a 75%, #ffe0a8 100%); --fg: #ffffff; }
+  body[data-phase="sunset"] { --bg: linear-gradient(180deg, #2f2a63 0%, #b5516b 40%, #f08a4b 72%, #ffc371 100%); --fg: #ffffff; }
+  body[data-phase="night"] { --bg: linear-gradient(180deg, #070b22 0%, #14214a 55%, #27386b 100%); --fg: #eaf0ff; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
@@ -33,6 +39,50 @@
     align-items: center;
   }
   /* 雨・雪・太陽の動き（背景の後ろ。操作はじゃましない） */
+  /* 空・景色（天気・時間帯・季節で毎日変わる。カードの後ろ） */
+  #sky { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+  #sky .wx-overlay { position: absolute; inset: 0; background: var(--overlay); }
+  .star { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; animation: twinkle 3s ease-in-out infinite; }
+  .star.w { width: 3px; height: 3px; background: #fff; box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.7); }
+  @keyframes twinkle { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+  .meteor {
+    position: absolute; top: 8%; left: 78%; width: 90px; height: 2px; opacity: 0;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff);
+    animation: meteor 18s linear infinite;
+  }
+  @keyframes meteor {
+    0%, 93% { opacity: 0; transform: translate(0, 0) rotate(-28deg); }
+    94% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-280px, 150px) rotate(-28deg); }
+  }
+  .orb { position: absolute; transform: translate(-50%, -50%); transition: left 1s, top 1s, opacity 1s; }
+  .orb.sun {
+    width: 96px; height: 96px; border-radius: 50%;
+    background: radial-gradient(circle, #fffbd0 0%, #ffe066 38%, rgba(255, 214, 80, 0.55) 55%, rgba(255, 214, 80, 0) 72%);
+    animation: sunpulse 6s ease-in-out infinite alternate;
+  }
+  @keyframes sunpulse { from { filter: brightness(0.95); } to { filter: brightness(1.12); } }
+  .orb.moon { font-size: 64px; line-height: 1; text-shadow: 0 0 22px rgba(255, 244, 200, 0.85); }
+  .cloud {
+    position: absolute; left: -45%; width: var(--w); height: var(--h); border-radius: 999px; filter: blur(4px);
+    animation: drift var(--dur) linear infinite; animation-delay: var(--delay);
+  }
+  .cloud::before, .cloud::after { content: ""; position: absolute; background: inherit; border-radius: 50%; }
+  .cloud::before { width: 52%; height: 170%; left: 14%; top: -75%; }
+  .cloud::after { width: 38%; height: 135%; right: 14%; top: -45%; }
+  @keyframes drift { to { transform: translateX(215vw); } }
+  .leaf { position: absolute; top: -8%; font-size: var(--fs); animation: leaf var(--dur) linear infinite; animation-delay: var(--delay); }
+  @keyframes leaf { to { transform: translate(var(--dx), 115vh) rotate(var(--rot)); } }
+  .firefly {
+    position: absolute; width: 5px; height: 5px; border-radius: 50%; background: #eaff80;
+    box-shadow: 0 0 8px 3px rgba(234, 255, 128, 0.7); animation: floaty var(--dur) ease-in-out infinite alternate; animation-delay: var(--delay);
+  }
+  @keyframes floaty { from { transform: translate(0, 0); opacity: 0.15; } to { transform: translate(var(--dx), var(--dy)); opacity: 1; } }
+  .rainbow { position: absolute; left: -10%; width: 120%; top: 6%; height: 40%; opacity: 0.6; animation: fadein 3s ease-out; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 0.6; } }
+  .land { position: absolute; left: 0; bottom: 0; width: 100%; height: 120px; }
+  .greeting { text-align: center; margin: -10px 0 16px; font-size: 0.85rem; color: var(--fg); }
+  #sky.still * { animation: none !important; transition: none !important; }
   #fx { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
   main, footer { position: relative; z-index: 1; }
   .drop {
@@ -47,14 +97,13 @@
     animation: snow linear infinite;
   }
   @keyframes snow { to { transform: translate(var(--dx), 112vh); } }
-  .sun {
-    position: absolute; top: -70px; right: -70px; width: 260px; height: 260px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 244, 170, 0.95) 0%, rgba(255, 244, 170, 0) 70%);
-    animation: glow 6s ease-in-out infinite alternate;
-  }
-  @keyframes glow { from { transform: scale(0.95); opacity: 0.8; } to { transform: scale(1.08); opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { #fx { display: none; } }
-  .controls, .result, .card { color: #1f2d3d; }
+  .controls, .result, .card {
+    color: #1f2d3d;
+    background: rgba(255, 255, 255, 0.88);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
   /* 並び替え */
   .edit-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
   .edit-btn {
@@ -191,17 +240,24 @@
   .day-head { font-weight: bold; margin-bottom: 4px; }
   footer {
     font-size: 0.8rem;
-    color: var(--fg);
-    padding: 16px;
+    color: #1f2d3d;
+    background: rgba(255, 255, 255, 0.86);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin: 8px 16px 130px; /* 下の余白は、固定の街並みの上に文字が来るようにするため */
     text-align: center;
   }
-  footer a { color: var(--link); }
+  footer a { color: #0b5cad; }
 </style>
 </head>
 <body data-weather="default">
+<div id="sky" aria-hidden="true"></div>
 <div id="fx" aria-hidden="true"></div>
 <main>
   <h1>お天気チェック</h1>
+  <p class="greeting" id="greeting"></p>
   <div class="controls">
     <label for="zip">郵便番号で探す</label>
     <div class="zip-row">
@@ -736,11 +792,17 @@
     }
   }
 
-  // ---- 天気に合わせた背景・動き ----
+  // ---- 天気・時間帯・季節に合わせた背景 ----
+  const PHASE_TOP = { dawn: "#34336b", sunset: "#2f2a63", night: "#070b22" };
   const THEME_TOP = { default: "#d6e9f8", sunny: "#3d9be9", partly: "#6fb1e6", cloudy: "#aab5c2", fog: "#c9ced3", rain: "#2f3d52", snow: "#9db9d6", storm: "#221f38" };
   const fxEl = document.getElementById("fx");
+  const skyEl = document.getElementById("sky");
+  const greetingEl = document.getElementById("greeting");
   const themeColorEl = document.querySelector('meta[name="theme-color"]');
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let currentTheme = "default";
+  let currentPhase = "";
+  let rainbowOn = false;
 
   function themeFor(code) {
     if (code === 0 || code === 1) return "sunny";
@@ -752,6 +814,163 @@
     return "cloudy";
   }
   function rnd(a, b) { return a + Math.random() * (b - a); }
+
+  // 時間帯: 夜 19〜5時 / 朝焼け 5〜7時 / 昼 7〜16時 / 夕焼け 16〜19時
+  function phaseOf(hour) {
+    if (hour >= 19 || hour < 5) return "night";
+    if (hour < 7) return "dawn";
+    if (hour < 16) return "day";
+    return "sunset";
+  }
+  // 月の満ち欠け（目安。月齢から8段階の絵文字にする）
+  const MOONS = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"];
+  function moonInfo(date) {
+    const jd = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12) / 86400000 + 2440587.5;
+    const age = (((jd - 2451550.1) % 29.530588853) + 29.530588853) % 29.530588853;
+    return { emoji: MOONS[Math.floor((age / 29.530588853) * 8 + 0.5) % 8], age: Math.round(age) };
+  }
+
+  function updateGreeting() {
+    const now = new Date();
+    const h = now.getHours();
+    const hello = (h >= 5 && h < 10) ? "おはようございます" : (h >= 10 && h < 17) ? "こんにちは" : "こんばんは";
+    let text = hello + "｜" + (now.getMonth() + 1) + "月" + now.getDate() + "日（" + WEEKDAYS[now.getDay()] + "）";
+    if (currentPhase === "night") {
+      const m = moonInfo(now);
+      text += "｜今夜の月 " + m.emoji + "（月齢 " + m.age + "）";
+    }
+    greetingEl.textContent = text;
+  }
+
+  // 太陽・月が空を動く位置（時刻から決める）
+  function orbPosition(now) {
+    const t = now.getHours() + now.getMinutes() / 60;
+    const night = currentPhase === "night";
+    const raw = night ? ((t >= 19 ? t - 19 : t + 5) / 10) : (t - 5) / 14;
+    const p = Math.min(1, Math.max(0, raw));
+    return { left: 8 + 84 * p, top: 62 - 52 * Math.sin(Math.PI * p) };
+  }
+  function positionOrb() {
+    const orb = skyEl.querySelector(".orb");
+    if (!orb) return;
+    const pos = orbPosition(new Date());
+    orb.style.left = pos.left.toFixed(1) + "%";
+    orb.style.top = pos.top.toFixed(1) + "%";
+  }
+
+  // 街の景色（富士山と街並み）。夜は窓に灯りがつく
+  const BUILDINGS = [[0,24,40],[24,18,58],[42,26,34],[68,16,70],[84,28,46],[112,20,30],[132,22,62],[154,30,40],[184,16,76],[200,26,36],[226,22,54],[248,28,44],[276,18,66],[294,24,32],[318,20,52],[338,26,40],[364,36,48]];
+  const LAND = {
+    day: { land: "#33485f", fuji: "#7f9bbb", win: 0 },
+    dawn: { land: "#2d2a50", fuji: "#7d5a8c", win: 0.35 },
+    sunset: { land: "#2a1f3d", fuji: "#7a4f78", win: 0.55 },
+    night: { land: "#060a1c", fuji: "#1a2547", win: 0.95 }
+  };
+  function landscapeSvg(phase) {
+    const c = LAND[phase];
+    let svg = '<svg class="land" viewBox="0 0 400 100" preserveAspectRatio="xMidYMax slice">'
+      + '<polygon points="140,100 250,26 360,100" fill="' + c.fuji + '"/>'
+      + '<polygon points="250,26 238,41 244,38 250,45 256,38 262,41" fill="#fff" opacity="0.9"/>';
+    BUILDINGS.forEach(function (b) {
+      svg += '<rect x="' + b[0] + '" y="' + (100 - b[2]) + '" width="' + b[1] + '" height="' + b[2] + '" fill="' + c.land + '"/>';
+      if (c.win > 0) {
+        const cols = Math.floor((b[1] - 6) / 6), rows = Math.floor((b[2] - 8) / 8);
+        for (let i = 0; i < cols; i++) {
+          for (let j = 0; j < rows; j++) {
+            if ((i * 7 + j * 13 + b[0]) % 3 === 0) continue;
+            svg += '<rect x="' + (b[0] + 4 + i * 6) + '" y="' + (100 - b[2] + 5 + j * 8) + '" width="3" height="4" fill="#ffd86b" opacity="' + c.win + '"/>';
+          }
+        }
+      }
+    });
+    return svg + "</svg>";
+  }
+  function rainbowSvg() {
+    const colors = ["#ff5a5a", "#ff9f43", "#ffe066", "#69db7c", "#4dabf7", "#5c7cfa", "#9775fa"];
+    let svg = '<svg class="rainbow" viewBox="0 0 200 100" preserveAspectRatio="none">';
+    colors.forEach(function (col, i) {
+      const r = 96 - i * 4;
+      svg += '<path d="M ' + (100 - r) + ' 100 A ' + r + ' ' + r + ' 0 0 1 ' + (100 + r) + ' 100" fill="none" stroke="' + col + '" stroke-width="4"/>';
+    });
+    return svg + "</svg>";
+  }
+
+  // 天気ごとの雲の数と色、時間帯ごとの空の暗さ
+  const CLOUDS = { default: 2, sunny: 2, partly: 4, cloudy: 6, fog: 4, rain: 6, snow: 5, storm: 6 };
+  function cloudColor(theme, phase) {
+    if (phase === "night") return "rgba(150, 165, 205, 0.28)";
+    if (phase === "dawn" || phase === "sunset") return "rgba(255, 226, 215, 0.5)";
+    if (theme === "storm") return "rgba(120, 110, 160, 0.4)";
+    if (theme === "rain") return "rgba(170, 185, 205, 0.32)";
+    if (theme === "cloudy") return "rgba(255, 255, 255, 0.6)";
+    return "rgba(255, 255, 255, 0.82)";
+  }
+  const OVERLAY = {
+    default: "transparent", sunny: "transparent", partly: "rgba(150, 160, 170, 0.18)", cloudy: "rgba(120, 130, 140, 0.4)",
+    fog: "rgba(190, 195, 200, 0.45)", rain: "rgba(40, 55, 75, 0.5)", snow: "rgba(230, 240, 250, 0.3)", storm: "rgba(25, 20, 45, 0.6)"
+  };
+
+  function buildSky(theme, phase) {
+    skyEl.className = reduceMotion ? "still" : "";
+    let html = "";
+    const clear = (theme === "sunny" || theme === "partly" || theme === "default");
+    const precip = (theme === "rain" || theme === "storm" || theme === "snow");
+
+    // 星と流れ星（夜）
+    if (phase === "night" && (clear || theme === "cloudy" || theme === "fog")) {
+      const n = clear ? (theme === "sunny" ? 60 : 40) : 14;
+      for (let i = 0; i < n; i++) {
+        html += '<span class="star" style="left:' + rnd(0, 100).toFixed(1) + '%;top:' + rnd(0, 62).toFixed(1) + '%;animation-delay:-' + rnd(0, 3).toFixed(1) + 's"></span>';
+      }
+      if (clear) html += '<span class="meteor"></span>';
+    }
+    // 太陽・月
+    if (!precip) {
+      const opacity = clear ? 1 : (theme === "cloudy" ? 0.35 : 0.25);
+      const orbClass = phase === "night" ? "orb moon" : "orb sun";
+      const inner = phase === "night" ? moonInfo(new Date()).emoji : "";
+      html += '<div class="' + orbClass + '" style="opacity:' + opacity + '">' + inner + "</div>";
+    }
+    // 雲
+    const color = cloudColor(theme, phase);
+    for (let i = 0; i < CLOUDS[theme]; i++) {
+      const w = rnd(110, 220).toFixed(0);
+      const dur = rnd(70, 140).toFixed(0);
+      html += '<div class="cloud" style="--w:' + w + 'px;--h:' + (w * 0.22).toFixed(0) + 'px;--dur:' + dur + 's;--delay:-' + rnd(0, dur).toFixed(0)
+        + 's;top:' + rnd(3, 38).toFixed(1) + '%;background:' + color + (reduceMotion ? ";left:" + rnd(0, 80).toFixed(0) + "%" : "") + '"></div>';
+    }
+    // 虹（雨上がりの昼）
+    if (rainbowOn && phase === "day" && !precip) html += rainbowSvg();
+    // 季節の舞いもの（雨・雪・雷雨のときは出さない）
+    if (!precip) {
+      const month = new Date().getMonth() + 1;
+      let glyphs = null;
+      if (month === 3 || month === 4) glyphs = ["🌸"];
+      else if (month === 5) glyphs = ["🍃"];
+      else if (month >= 9 && month <= 11) glyphs = ["🍂", "🍁"];
+      if (glyphs) {
+        for (let i = 0; i < 12; i++) {
+          html += '<span class="leaf" style="left:' + rnd(0, 100).toFixed(1) + '%;--fs:' + rnd(14, 24).toFixed(0) + 'px;--dur:' + rnd(10, 18).toFixed(1)
+            + 's;--delay:-' + rnd(0, 18).toFixed(1) + 's;--dx:' + rnd(-90, 90).toFixed(0) + 'px;--rot:' + rnd(-360, 360).toFixed(0) + 'deg">'
+            + glyphs[i % glyphs.length] + "</span>";
+        }
+      } else if ((month === 7 || month === 8) && phase === "night") {
+        for (let i = 0; i < 14; i++) {
+          html += '<span class="firefly" style="left:' + rnd(0, 100).toFixed(1) + '%;top:' + rnd(55, 85).toFixed(1) + '%;--dur:' + rnd(4, 8).toFixed(1)
+            + 's;--delay:-' + rnd(0, 8).toFixed(1) + 's;--dx:' + rnd(-40, 40).toFixed(0) + 'px;--dy:' + rnd(-50, 20).toFixed(0) + 'px"></span>';
+        }
+      } else if ((month === 12 || month <= 2) && phase === "day") {
+        for (let i = 0; i < 18; i++) {
+          html += '<span class="star w" style="left:' + rnd(0, 100).toFixed(1) + '%;top:' + rnd(5, 70).toFixed(1) + '%;animation-delay:-' + rnd(0, 3).toFixed(1) + 's"></span>';
+        }
+      }
+    }
+    html += landscapeSvg(phase);
+    skyEl.innerHTML = '<div class="wx-overlay"></div>' + html;
+    skyEl.style.setProperty("--overlay", phase === "day" ? "transparent" : OVERLAY[theme]);
+    positionOrb();
+  }
+
   function buildFx(theme) {
     fxEl.innerHTML = "";
     if (reduceMotion) return;
@@ -768,17 +987,33 @@
         html += '<span class="flake" style="left:' + rnd(0, 100).toFixed(1) + '%;--s:' + size + 'px;--dx:' + rnd(-40, 40).toFixed(0)
           + 'px;animation-duration:' + rnd(6, 12).toFixed(1) + 's;animation-delay:-' + rnd(0, 12).toFixed(1) + 's"></span>';
       }
-    } else if (theme === "sunny" || theme === "partly") {
-      html = '<div class="sun"></div>';
     }
     fxEl.innerHTML = html;
   }
+
+  // 背景を作り直す（天気・時間帯・虹が変わったとき）。force=false で時間帯が同じなら、太陽・月の位置と挨拶だけ更新する
+  function refreshScene(force) {
+    const phase = phaseOf(new Date().getHours());
+    if (!force && phase === currentPhase) { positionOrb(); updateGreeting(); return; }
+    const themeChanged = document.body.dataset.weather !== currentTheme;
+    currentPhase = phase;
+    document.body.dataset.phase = phase;
+    document.body.dataset.weather = currentTheme;
+    if (themeColorEl) themeColorEl.setAttribute("content", phase === "day" ? THEME_TOP[currentTheme] : PHASE_TOP[phase]);
+    buildSky(currentTheme, phase);
+    if (force || themeChanged) buildFx(currentTheme);
+    updateGreeting();
+  }
   function applyTheme(code) {
     const theme = (code === null || code === undefined) ? "default" : themeFor(code);
-    if (document.body.dataset.weather === theme) return;
-    document.body.dataset.weather = theme;
-    if (themeColorEl) themeColorEl.setAttribute("content", THEME_TOP[theme]);
-    buildFx(theme);
+    if (theme === currentTheme && currentPhase) return;
+    currentTheme = theme;
+    refreshScene(true);
+  }
+  function setRainbow(on) {
+    if (on === rainbowOn) return;
+    rainbowOn = on;
+    if (currentPhase) refreshScene(true);
   }
 
   // ---- 今日・明日の時間ごとの天気（3時間ごと。選んだ地域に合わせる）----
@@ -796,6 +1031,13 @@
       const h = j.hourly;
       const nowH = new Date().getHours();
       function ok(v) { return v !== null && v !== undefined; }
+      // 雨上がりの昼なら、背景に虹を出す（いまは雨でなく、直前の3時間のうちに雨があった）
+      (function () {
+        const nowCode = h.weather_code[nowH];
+        let rainedBefore = false;
+        for (let k = Math.max(0, nowH - 3); k < nowH; k++) if (ok(h.weather_code[k]) && isRainy(h.weather_code[k])) rainedBefore = true;
+        setRainbow(ok(nowCode) && !isRainy(nowCode) && !isSnowy(nowCode) && nowCode < 45 && rainedBefore && nowH >= 7 && nowH < 17);
+      })();
       let html = "";
       [[t0, 0], [t1, 24]].forEach(function (day, di) {
         html += '<div class="hday">' + (di === 0 ? "今日" : "明日") + "（" + ymdLabel(day[0]) + "）</div><div class=\"hours\">";
@@ -1022,6 +1264,8 @@
 
   regionEl.addEventListener("change", function () { saveLoc(); refreshDefaultUi(); update(); updateWeek(); updateHourly(); });
   dateEl.addEventListener("change", update);
+  refreshScene(true);
+  setInterval(function () { refreshScene(false); }, 60000);
   update();
   updateWeek();
   updateHourly();
