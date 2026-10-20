@@ -842,20 +842,21 @@
   async function renderVerifyBlock(my, region, date) {
     const el = document.getElementById("verifyBlock");
     if (date > todayStr) { el.innerHTML = ""; return; }
-    if (date === todayStr) {
-      el.innerHTML = "<h3>🎯 予報の答え合わせ</h3><div>今日の分は、明日になると見られます。</div>";
-      return;
-    }
+    // 今日の分は、まだ答え合わせできない。今日を見ているときは、昨日の分を出す(毎日、自動で新しくなる)
+    const isToday = date === todayStr;
+    const target = isToday ? addDays(todayStr, -1) : date;
+    const title = isToday ? "🎯 昨日（" + ymdLabel(target) + "）の予報の答え合わせ" : "🎯 予報の答え合わせ";
+    const todayNote = isToday ? '<p class="note">今日の分は、明日になると見られます。</p>' : "";
     try {
       const j = await getJson(PREVRUNS + "?" + loc(region)
         + "&hourly=temperature_2m,temperature_2m_previous_day1,precipitation,precipitation_previous_day1"
-        + "&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date);
+        + "&timezone=Asia%2FTokyo&start_date=" + target + "&end_date=" + target);
       const h = j.hourly;
       function nums(a) { return a.filter(function (v) { return v !== null && v !== undefined; }); }
       const aT = nums(h.temperature_2m), fT = nums(h.temperature_2m_previous_day1);
       const aR = nums(h.precipitation), fR = nums(h.precipitation_previous_day1);
       if (aT.length < 20 || fT.length < 20 || aR.length < 20 || fR.length < 20) {
-        if (my === seq) el.innerHTML = "<h3>🎯 予報の答え合わせ</h3><div>この日の答え合わせに使えるデータがありません。</div>";
+        if (my === seq) el.innerHTML = "<h3>" + title + "</h3><div>この日の答え合わせに使えるデータがありません。</div>" + todayNote;
         return;
       }
       const sum = function (a) { return a.reduce(function (x, v) { return x + v; }, 0); };
@@ -869,14 +870,14 @@
       else verdict = "△ ずれがありました";
       const rainTxt = function (wet, mm) { return wet ? "雨あり（" + mm.toFixed(1) + "mm）" : "雨なし"; };
       if (my === seq) {
-        el.innerHTML = "<h3>🎯 予報の答え合わせ</h3>"
+        el.innerHTML = "<h3>" + title + "</h3>"
           + "<div>前日の予報: 最高 " + Math.round(fMax) + "℃・" + rainTxt(fWet, fRain) + "</div>"
           + "<div>実際: 最高 " + Math.round(aMax) + "℃・" + rainTxt(aWet, aRain) + "</div>"
           + '<div class="verdict">' + verdict + "</div>"
-          + '<p class="note">雨あり＝1日の合計が1mm以上。「実際」は予報モデルの解析値で、上の降水量と少し違う場合があります。</p>';
+          + '<p class="note">雨あり＝1日の合計が1mm以上。「実際」は予報モデルの解析値で、上の降水量と少し違う場合があります。</p>' + todayNote;
       }
     } catch (e) {
-      if (my === seq) el.innerHTML = '<h3>🎯 予報の答え合わせ</h3><div class="error">取得できませんでした。</div>';
+      if (my === seq) el.innerHTML = "<h3>" + title + '</h3><div class="error">取得できませんでした。</div>' + todayNote;
     }
   }
 
