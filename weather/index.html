@@ -296,6 +296,15 @@
   .bar.past { opacity: 0.35; }
   .bar-axis { display: flex; justify-content: space-between; font-size: 0.7rem; color: #868e96; }
   .verdict { font-weight: bold; color: #e8590c; }
+  .rec { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #d5dde5; }
+  .rec-head { font-weight: bold; font-size: 0.9rem; }
+  .rec-sum { margin-top: 4px; font-size: 0.9rem; }
+  .rec-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .rec-chip { font-size: 0.75rem; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .rec-good { background: #e6f4ea; color: #2b8a3e; }
+  .rec-ok { background: #e7f1fb; color: #1971c2; }
+  .rec-bad { background: #fff0e6; color: #e8590c; }
+  .rec-none { background: #f1f3f5; color: #868e96; }
   .day-block { margin-bottom: 14px; }
   .day-block:last-of-type { margin-bottom: 0; }
   .day-head { font-weight: bold; margin-bottom: 4px; }
@@ -839,43 +848,76 @@
   }
 
   // 予報の答え合わせ（前日に出ていた予報と、実際の天気を比べる）
+  // 1日ぶん(24時間)の、前日の予報と実際を比べる。h は1時間ごとのデータ、off はその日の始まりの位置。データが足りなければ null
+  function verifyDay(h, off) {
+    function nums(a) { return a.slice(off, off + 24).filter(function (v) { return v !== null && v !== undefined; }); }
+    const aT = nums(h.temperature_2m), fT = nums(h.temperature_2m_previous_day1);
+    const aR = nums(h.precipitation), fR = nums(h.precipitation_previous_day1);
+    if (aT.length < 20 || fT.length < 20 || aR.length < 20 || fR.length < 20) return null;
+    const sum = function (a) { return a.reduce(function (x, v) { return x + v; }, 0); };
+    const aMax = Math.max.apply(null, aT), fMax = Math.max.apply(null, fT);
+    const aRain = sum(aR), fRain = sum(fR);
+    const aWet = aRain >= 1, fWet = fRain >= 1; // 雨あり＝1日の合計が1mm以上
+    const gap = Math.abs(Math.round(aMax) - Math.round(fMax));
+    let mark, label;
+    if (aWet === fWet && gap <= 2) { mark = "◎"; label = "ほぼ的中"; }
+    else if (aWet === fWet && gap <= 4) { mark = "○"; label = "まずまず"; }
+    else { mark = "△"; label = "ずれがありました"; }
+    return { aMax: aMax, fMax: fMax, aRain: aRain, fRain: fRain, aWet: aWet, fWet: fWet, mark: mark, label: label };
+  }
+  function rainText(wet, mm) { return wet ? "雨あり（" + mm.toFixed(1) + "mm）" : "雨なし"; }
+  function shortDate(ymd) { const p = ymd.split("-"); return Number(p[1]) + "/" + Number(p[2]); }
+
+  // 直近の的中の記録(◎○△の日数と、日ごとの印)。days: [{ date, v }] v は verifyDay の結果(データが無い日は null)
+  function recordHtml(days) {
+    const valid = days.filter(function (d) { return d.v; });
+    if (valid.length < 3) return ""; // 日数が少なすぎるときは、記録を出さない
+    const cnt = { "◎": 0, "○": 0, "△": 0 };
+    valid.forEach(function (d) { cnt[d.v.mark]++; });
+    const cls = { "◎": "rec-good", "○": "rec-ok", "△": "rec-bad" };
+    const chips = days.map(function (d) {
+      if (!d.v) return '<span class="rec-chip rec-none" title="データなし">' + shortDate(d.date) + " －</span>";
+      return '<span class="rec-chip ' + cls[d.v.mark] + '" title="' + esc(shortDate(d.date) + " 前日の予報 最高" + Math.round(d.v.fMax) + "℃・"
+        + rainText(d.v.fWet, d.v.fRain) + " → 実際 最高" + Math.round(d.v.aMax) + "℃・" + rainText(d.v.aWet, d.v.aRain)) + '">'
+        + shortDate(d.date) + " " + d.v.mark + "</span>";
+    }).join("");
+    return '<div class="rec"><div class="rec-head">直近' + days.length + "日の記録</div>"
+      + '<div class="rec-sum">◎ ほぼ的中 <b>' + cnt["◎"] + "日</b>　○ まずまず <b>" + cnt["○"] + "日</b>　△ ずれ <b>" + cnt["△"] + "日</b></div>"
+      + '<div class="rec-chips">' + chips + "</div>"
+      + '<p class="note">前日の予報(予報モデル)と、実際(解析値)を比べた記録です。数日ぶんの記録なので、予報の腕前を、決めつけるものではありません。</p></div>';
+  }
+
   async function renderVerifyBlock(my, region, date) {
     const el = document.getElementById("verifyBlock");
     if (date > todayStr) { el.innerHTML = ""; return; }
-    // 今日の分は、まだ答え合わせできない。今日を見ているときは、昨日の分を出す(毎日、自動で新しくなる)
+    // 今日の分は、まだ答え合わせできない。今日を見ているときは、昨日の分と、直近の記録を出す(毎日、自動で新しくなる)
     const isToday = date === todayStr;
     const target = isToday ? addDays(todayStr, -1) : date;
     const title = isToday ? "🎯 昨日（" + ymdLabel(target) + "）の予報の答え合わせ" : "🎯 予報の答え合わせ";
     const todayNote = isToday ? '<p class="note">今日の分は、明日になると見られます。</p>' : "";
+    const RECORD_DAYS = 7;
+    const start = isToday ? addDays(todayStr, -RECORD_DAYS) : date; // 今日のときは、昨日までの7日ぶんを、1回で取る
     try {
       const j = await getJson(PREVRUNS + "?" + loc(region)
         + "&hourly=temperature_2m,temperature_2m_previous_day1,precipitation,precipitation_previous_day1"
-        + "&timezone=Asia%2FTokyo&start_date=" + target + "&end_date=" + target);
+        + "&timezone=Asia%2FTokyo&start_date=" + start + "&end_date=" + target);
       const h = j.hourly;
-      function nums(a) { return a.filter(function (v) { return v !== null && v !== undefined; }); }
-      const aT = nums(h.temperature_2m), fT = nums(h.temperature_2m_previous_day1);
-      const aR = nums(h.precipitation), fR = nums(h.precipitation_previous_day1);
-      if (aT.length < 20 || fT.length < 20 || aR.length < 20 || fR.length < 20) {
-        if (my === seq) el.innerHTML = "<h3>" + title + "</h3><div>この日の答え合わせに使えるデータがありません。</div>" + todayNote;
-        return;
+      const nDays = isToday ? RECORD_DAYS : 1;
+      const days = [];
+      for (let i = 0; i < nDays; i++) days.push({ date: addDays(start, i), v: verifyDay(h, i * 24) });
+      const main = days[days.length - 1].v; // 答え合わせの対象の日(今日のときは昨日)
+      let html;
+      if (!main) {
+        html = "<h3>" + title + "</h3><div>この日の答え合わせに使えるデータがありません。</div>";
+      } else {
+        html = "<h3>" + title + "</h3>"
+          + "<div>前日の予報: 最高 " + Math.round(main.fMax) + "℃・" + rainText(main.fWet, main.fRain) + "</div>"
+          + "<div>実際: 最高 " + Math.round(main.aMax) + "℃・" + rainText(main.aWet, main.aRain) + "</div>"
+          + '<div class="verdict">' + main.mark + " " + main.label + "</div>"
+          + '<p class="note">雨あり＝1日の合計が1mm以上。「実際」は予報モデルの解析値で、上の降水量と少し違う場合があります。</p>';
       }
-      const sum = function (a) { return a.reduce(function (x, v) { return x + v; }, 0); };
-      const aMax = Math.max.apply(null, aT), fMax = Math.max.apply(null, fT);
-      const aRain = sum(aR), fRain = sum(fR);
-      const aWet = aRain >= 1, fWet = fRain >= 1;
-      const gap = Math.abs(Math.round(aMax) - Math.round(fMax));
-      let verdict;
-      if (aWet === fWet && gap <= 2) verdict = "◎ ほぼ的中";
-      else if (aWet === fWet && gap <= 4) verdict = "○ まずまず";
-      else verdict = "△ ずれがありました";
-      const rainTxt = function (wet, mm) { return wet ? "雨あり（" + mm.toFixed(1) + "mm）" : "雨なし"; };
-      if (my === seq) {
-        el.innerHTML = "<h3>" + title + "</h3>"
-          + "<div>前日の予報: 最高 " + Math.round(fMax) + "℃・" + rainTxt(fWet, fRain) + "</div>"
-          + "<div>実際: 最高 " + Math.round(aMax) + "℃・" + rainTxt(aWet, aRain) + "</div>"
-          + '<div class="verdict">' + verdict + "</div>"
-          + '<p class="note">雨あり＝1日の合計が1mm以上。「実際」は予報モデルの解析値で、上の降水量と少し違う場合があります。</p>' + todayNote;
-      }
+      if (isToday) html += recordHtml(days) + todayNote;
+      if (my === seq) el.innerHTML = html;
     } catch (e) {
       if (my === seq) el.innerHTML = "<h3>" + title + '</h3><div class="error">取得できませんでした。</div>' + todayNote;
     }
