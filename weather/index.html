@@ -334,9 +334,11 @@
   .jma-area { margin: 0 0 6px; }
   .jma-src { color: #868e96; font-size: 0.72rem; margin-top: 6px; }
   .jma-src a, .note a { color: #0b5cad; }
-  #warnBand:empty { display: none; }
+  #warnBand:empty, #typhoonBand:empty { display: none; }
   .warn { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; border: 1px solid #f1c40f; background: #fff9db; color: #5c4400; font-size: 0.85rem; line-height: 1.6; text-align: left; }
   .warn.w-warn { border-color: #f08c00; background: #fff0d6; color: #7a3d00; }
+  .warn.w-ty { border-color: #74a7d9; background: #e7f1fb; color: #123a63; }
+  .warn .ty-item + .ty-item { margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(0,0,0,0.2); }
   .warn.w-special { border-color: #c92a2a; background: #ffe3e3; color: #8a1212; }
   .warn .w-title { font-weight: bold; }
   .warn .w-row b { font-weight: bold; }
@@ -398,6 +400,7 @@
     <input type="date" id="date">
   </div>
   <div id="warnBand" aria-live="polite"></div>
+  <div id="typhoonBand"></div>
   <div class="edit-row">
     <button id="editBtn" type="button" class="edit-btn" aria-pressed="false">⇅ 並び替え</button>
     <button id="resetOrderBtn" type="button" class="edit-btn" hidden>元の順番に戻す</button>
@@ -1129,6 +1132,96 @@
   function jmaWarnGray(text, office) {
     return '<div class="warn w-gray">' + esc(text) + (office ? " " + jmaWarnLink(office, "気象庁のページで確認する") : "") + "</div>";
   }
+  // ---- 気象庁の台風情報 ----
+  // 気象庁の発表を、そのまま並べる。「接近する」などの判断はしない(距離は、予報円の中心との直線距離)
+  const JMA_TYPHOON_PAGE = "https://www.jma.go.jp/bosai/map.html#contents=typhoon";
+  const JMA_TYPHOON_STALE_MS = 24 * 3600 * 1000;
+  const JMA_TYPHOON_NEAR_KM = 500; // 予報で、この距離より近づくときは、帯の色を変える
+  let jmaTyphoonCache = null;
+  function loadJmaTyphoons() {
+    if (jmaTyphoonCache && Date.now() - jmaTyphoonCache.at < 60000) return jmaTyphoonCache.promise;
+    const promise = getJson(JMA_ROOT + "typhoon/data/targetTc.json").then(function (list) {
+      return Promise.all(list.map(function (t) {
+        return getJson(JMA_ROOT + "typhoon/data/" + t.tropicalCyclone + "/specifications.json").then(function (spec) { return { info: t, spec: spec }; });
+      }));
+    });
+    jmaTyphoonCache = { at: Date.now(), promise: promise };
+    promise.catch(function () { jmaTyphoonCache = null; });
+    return promise;
+  }
+  function distanceKm(lat1, lon1, lat2, lon2) { // 2点間の直線距離(球面)
+    const R = 6371, rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  function jstLabel(jst) { // "2026-10-24T09:00:00+09:00" → "10/24 9時"
+    const m = String(jst || "").match(/^\d{4}-(\d\d)-(\d\d)T(\d\d):(\d\d)/);
+    return m ? Number(m[1]) + "/" + Number(m[2]) + " " + Number(m[3]) + "時" : "";
+  }
+  function typhoonItemHtml(t, region) {
+    const spec = t.spec;
+    const title = spec.find(function (x) { return x.part === "title"; });
+    const ana = spec.find(function (x) { return x.part && x.part.jp === "実況"; });
+    if (!title || !ana) return null;
+    const cat = (title.category && title.category.jp) || "台風";
+    const num = Number(String(title.typhoonNumber || "").slice(2));
+    const head = (cat === "台風" && num) ? "台風" + num + "号" : cat;
+    const nm = title.name && title.name.jp ? "（" + title.name.jp + "）" : "";
+    const lines = [];
+    const kind = [ana.intensity, ana.scale].filter(Boolean).join("・");
+    const move = ana.course ? ana.course + (ana.speed && ana.speed["km/h"] ? "へ 時速" + ana.speed["km/h"] + "km" : "") : "";
+    lines.push([kind, ana.location, move].filter(Boolean).join("　"));
+    const wind = ana.maximumWind && ana.maximumWind.sustained ? ana.maximumWind.sustained["m/s"] : null;
+    const gust = ana.maximumWind && ana.maximumWind.gust ? ana.maximumWind.gust["m/s"] : null;
+    lines.push([ana.pressure ? "中心気圧 " + ana.pressure + "hPa" : "", wind ? "最大風速 " + wind + "m/s" + (gust ? "（最大瞬間 " + gust + "m/s）" : "") : ""].filter(Boolean).join("　"));
+    // 選んだ場所からの距離。予報円の中心で測る
+    let near = false;
+    const pts = spec.filter(function (x) { return x.position && x.position.deg && x.validtime; });
+    const place = region.name.replace(/^〒[0-9-]+\s*/, "").replace(/（.*$/, "");
+    if (pts.length) {
+      const now = pts.find(function (x) { return x.part && x.part.jp === "実況"; }) || pts[0];
+      const dNow = distanceKm(region.lat, region.lon, now.position.deg[0], now.position.deg[1]);
+      let best = null;
+      pts.forEach(function (x) {
+        if (!(x.advancedHours > 0)) return;
+        const d = distanceKm(region.lat, region.lon, x.position.deg[0], x.position.deg[1]);
+        if (best === null || d < best.d) best = { d: d, at: x.validtime.JST };
+      });
+      let txt = place + "から約" + (Math.round(dNow / 10) * 10) + "km";
+      if (best !== null && best.d < dNow) {
+        txt += "　予報で最も近づくのは " + jstLabel(best.at) + " ごろ、約" + (Math.round(best.d / 10) * 10) + "km";
+        if (best.d <= JMA_TYPHOON_NEAR_KM) near = true;
+      } else if (best !== null) {
+        txt += "　予報では、これより近づきません";
+      }
+      lines.push(txt + "（中心どうしの直線距離）");
+    }
+    const issue = title.issue && title.issue.JST;
+    const stale = !(Date.now() - Date.parse(issue) < JMA_TYPHOON_STALE_MS);
+    return { near: near, stale: stale, html: '<div class="ty-item"><div class="w-title">🌀 ' + esc(head + nm) + "</div>"
+      + lines.filter(Boolean).map(function (l) { return '<div class="w-row">' + esc(l) + "</div>"; }).join("")
+      + '<div class="w-src">' + esc(jstLabel(issue)) + " 発表</div></div>" };
+  }
+  let typhoonSeq = 0;
+  async function renderTyphoonBand() {
+    const my = ++typhoonSeq;
+    const el = document.getElementById("typhoonBand");
+    const region = currentRegion();
+    try {
+      const list = await loadJmaTyphoons();
+      if (my !== typhoonSeq) return;
+      const items = list.map(function (t) { return typhoonItemHtml(t, region); }).filter(Boolean);
+      if (items.length === 0) { el.innerHTML = ""; return; } // 台風がなければ、何も出さない
+      if (items.some(function (x) { return x.stale; })) { el.innerHTML = jmaWarnGray("台風情報のデータが古い可能性があります。"); el.firstChild.insertAdjacentHTML("beforeend", ' <a href="' + JMA_TYPHOON_PAGE + '" target="_blank" rel="noopener">気象庁のページで確認する</a>'); return; }
+      el.innerHTML = '<div class="warn ' + (items.some(function (x) { return x.near; }) ? "w-warn" : "w-ty") + '">'
+        + items.map(function (x) { return x.html; }).join("")
+        + '<div class="w-src">最新の情報は<a href="' + JMA_TYPHOON_PAGE + '" target="_blank" rel="noopener">気象庁のページ</a>で確認してください。'
+        + "出典：気象庁ホームページを加工して作成</div></div>";
+    } catch (e) {
+      if (my === typhoonSeq) el.innerHTML = '<div class="warn w-gray">台風情報を取得できませんでした。 <a href="' + JMA_TYPHOON_PAGE + '" target="_blank" rel="noopener">気象庁のページで確認する</a></div>';
+    }
+  }
   let warnSeq = 0;
   async function renderWarnBand(key) {
     const my = ++warnSeq;
@@ -1784,6 +1877,7 @@
     updateSettingsSummary();
     const region = currentRegion();
     const jmaKey = jmaKeyOf();
+    renderTyphoonBand();
     renderWarnBand(jmaKey); // 警報・注意報は「いま」の情報なので、日付に関係なく出す
     const date = dateEl.value;
     if (!date) { show('<p class="message">日付を選んでください。</p>'); return; }
