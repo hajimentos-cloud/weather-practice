@@ -225,6 +225,9 @@
   .min strong { color: #1971c2; }
   .rain strong { color: #2b8a3e; }
   .rain strong.none { font-size: 1rem; color: #868e96; line-height: 2.4rem; }
+  .wind-line { margin-top: 10px; font-size: 0.9rem; color: #5a6b7c; }
+  .wind-line b { color: #1c2b3a; }
+  .wind-line.strong b { color: #e8590c; }
   .message { color: #5a6b7c; }
   .error { color: #c92a2a; }
   .card {
@@ -276,6 +279,8 @@
   .hcell .h-icon { font-size: 1.3rem; line-height: 1.5; }
   .hcell .h-temp { font-weight: bold; font-size: 0.8rem; }
   .hcell .h-pop { color: #2b8a3e; font-size: 0.68rem; }
+  .hcell .h-wind { color: #5a6b7c; font-size: 0.68rem; }
+  .hcell .h-wind.strong { color: #e8590c; font-weight: bold; }
   .hcell.past { opacity: 0.45; }
   .hcell.now { outline: 2px solid #1971c2; outline-offset: -1px; }
   .hc-sunny { background: #fff1b8; }
@@ -710,8 +715,8 @@
 
   // 1日分の天気。予報API → 空なら過去データAPI。降水確率は予報APIだけにある
   async function getDaily(region, date) {
-    const daily = "&daily=weather_code,temperature_2m_max,temperature_2m_min";
-    const tail = "&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date;
+    const daily = "&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant";
+    const tail = "&wind_speed_unit=ms&timezone=Asia%2FTokyo&start_date=" + date + "&end_date=" + date;
     let d = null;
     let rain = null;
     if (!tooOldForForecast(date)) {
@@ -726,8 +731,36 @@
     return {
       date: d.time[0], code: d.weather_code[0],
       max: d.temperature_2m_max[0], min: d.temperature_2m_min[0],
-      rain: (rain === undefined ? null : rain)
+      rain: (rain === undefined ? null : rain),
+      wind: d.wind_speed_10m_max ? d.wind_speed_10m_max[0] : null,
+      gust: d.wind_gusts_10m_max ? d.wind_gusts_10m_max[0] : null,
+      windDir: d.wind_direction_10m_dominant ? d.wind_direction_10m_dominant[0] : null
     };
+  }
+
+  // 風。向きは「風が吹いてくる方角」（天気予報と同じ言い方）。強さは気象庁の言い方に合わせる
+  const WIND_DIRS = ["北", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西"];
+  function windDirText(deg) {
+    if (deg === null || deg === undefined) return "";
+    return WIND_DIRS[Math.round(deg / 22.5) % 16] + "の風";
+  }
+  function windLevel(ms) { // 10m/s以上を「強め」として目立たせる
+    if (ms === null || ms === undefined) return "";
+    if (ms >= 30) return "猛烈な風";
+    if (ms >= 20) return "非常に強い風";
+    if (ms >= 15) return "強い風";
+    if (ms >= 10) return "やや強い風";
+    if (ms >= 5) return "風あり";
+    return "おだやか";
+  }
+  function windHtml(d) {
+    if (d.wind === null || d.wind === undefined) return "";
+    const dir = windDirText(d.windDir);
+    const gust = (d.gust === null || d.gust === undefined) ? "" : "（最大瞬間 " + Math.round(d.gust) + "m/s）";
+    const gusty = d.gust !== null && d.gust !== undefined && d.gust >= 15; // 平均は弱くても、突風が強い日
+    const level = (gusty && d.wind < 10) ? "突風に注意" : windLevel(d.wind);
+    return '<div class="wind-line' + (d.wind >= 10 || gusty ? " strong" : "") + '">💨 風　'
+      + (dir ? dir + "　" : "") + "<b>" + Math.round(d.wind) + "m/s</b>" + gust + "　" + level + "</div>";
   }
 
   // 値が true の連続した時間を「15時〜18時」の形にまとめる
@@ -1532,7 +1565,7 @@
     try {
       const t0 = todayStr, t1 = addDays(todayStr, 1);
       const j = await getJson(FORECAST + "?" + loc(region)
-        + "&hourly=weather_code,temperature_2m,precipitation_probability&timezone=Asia%2FTokyo&start_date=" + t0 + "&end_date=" + t1);
+        + "&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&start_date=" + t0 + "&end_date=" + t1);
       if (my !== hourSeq) return;
       const h = j.hourly;
       const nowH = new Date().getHours();
@@ -1549,11 +1582,12 @@
         html += '<div class="hday">' + (di === 0 ? "今日" : "明日") + "（" + ymdLabel(day[0]) + "）</div><div class=\"hours\">";
         for (let slot = 0; slot < 8; slot++) {
           const from = day[1] + slot * 3;
-          const codes = [], temps = [], pops = [];
+          const codes = [], temps = [], pops = [], winds = [];
           for (let k = from; k < from + 3; k++) {
             if (ok(h.weather_code[k])) codes.push(h.weather_code[k]);
             if (ok(h.temperature_2m[k])) temps.push(h.temperature_2m[k]);
             if (ok(h.precipitation_probability[k])) pops.push(h.precipitation_probability[k]);
+            if (ok(h.wind_speed_10m[k])) winds.push(h.wind_speed_10m[k]);
           }
           const label = (slot * 3) + "時";
           if (codes.length === 0) {
@@ -1564,6 +1598,7 @@
           const code = Math.max.apply(null, codes);
           const temp = temps.length ? Math.round(temps.reduce(function (a, b) { return a + b; }, 0) / temps.length) : null;
           const pop = pops.length ? Math.round(Math.max.apply(null, pops)) : null;
+          const wind = winds.length ? Math.round(Math.max.apply(null, winds)) : null;
           const isToday = di === 0;
           const past = isToday && (slot * 3 + 2) < nowH;
           const now = isToday && nowH >= slot * 3 && nowH < slot * 3 + 3;
@@ -1573,12 +1608,13 @@
             + '<div class="h-time">' + label + "</div>"
             + '<div class="h-icon">' + name.split(" ")[0] + "</div>"
             + '<div class="h-temp">' + (temp === null ? "-" : temp + "°") + "</div>"
-            + '<div class="h-pop">' + (pop === null ? "-" : pop + "%") + "</div></div>";
+            + '<div class="h-pop">' + (pop === null ? "-" : pop + "%") + "</div>"
+            + '<div class="h-wind' + (wind !== null && wind >= 10 ? " strong" : "") + '">' + (wind === null ? "-" : wind) + "</div></div>";
         }
         html += "</div>";
       });
       el.innerHTML = "<h2>🕒 今日・明日の時間ごとの天気（" + esc(region.name) + "）</h2>" + html
-        + '<p class="note">3時間ごとの天気・気温・降水確率です。天気は、その3時間でいちばん悪い天気を表示しています。青い枠は、いまの時間帯です。Open-Meteo の数値予報の計算結果で、気象庁の発表ではありません。</p>';
+        + '<p class="note">3時間ごとの天気・気温・降水確率・風速（m/s）です。天気は、その3時間でいちばん悪い天気、風速は最大の値です。風速が10m/s以上の枠は、オレンジで目立たせています。青い枠は、いまの時間帯です。Open-Meteo の数値予報の計算結果で、気象庁の発表ではありません。</p>';
     } catch (e) {
       if (my !== hourSeq) return;
       el.innerHTML = '<h2>🕒 今日・明日の時間ごとの天気</h2><p class="error">取得できませんでした。（' + esc(e.message) + "）</p>";
@@ -1678,6 +1714,7 @@
         + '<div class="min">最低気温<strong>' + Math.round(d.min) + "℃</strong></div>"
         + '<div class="rain">降水確率' + rainHtml + "</div>"
         + "</div>"
+        + windHtml(d)
         + '<div id="jmaBlock"></div>'
       );
       renderJmaBlock(my, jmaKey, date);
