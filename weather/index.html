@@ -226,6 +226,7 @@
   .rain strong { color: #2b8a3e; }
   .rain strong.none { font-size: 1rem; color: #868e96; line-height: 2.4rem; }
   .wind-line { margin-top: 10px; font-size: 0.9rem; color: #5a6b7c; }
+  .nowrap { white-space: nowrap; }
   .wind-line b { color: #1c2b3a; }
   .wind-line.strong b { color: #e8590c; }
   .message { color: #5a6b7c; }
@@ -333,6 +334,15 @@
   .jma-area { margin: 0 0 6px; }
   .jma-src { color: #868e96; font-size: 0.72rem; margin-top: 6px; }
   .jma-src a, .note a { color: #0b5cad; }
+  #warnBand:empty { display: none; }
+  .warn { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; border: 1px solid #f1c40f; background: #fff9db; color: #5c4400; font-size: 0.85rem; line-height: 1.6; text-align: left; }
+  .warn.w-warn { border-color: #f08c00; background: #fff0d6; color: #7a3d00; }
+  .warn.w-special { border-color: #c92a2a; background: #ffe3e3; color: #8a1212; }
+  .warn .w-title { font-weight: bold; }
+  .warn .w-row b { font-weight: bold; }
+  .warn .w-src { font-size: 0.72rem; margin-top: 4px; opacity: 0.85; }
+  .warn a { color: inherit; text-decoration: underline; }
+  .warn.w-gray { border-color: #dde4eb; background: rgba(255,255,255,0.7); color: #5a6b7c; font-size: 0.75rem; }
   .jma-gray { margin: 12px 0 0; font-size: 0.75rem; color: #868e96; text-align: left; }
   .seg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
   .seg { display: inline-flex; border: 1px solid #b8c6d4; border-radius: 999px; overflow: hidden; }
@@ -387,6 +397,7 @@
     <label for="date">日付</label>
     <input type="date" id="date">
   </div>
+  <div id="warnBand" aria-live="polite"></div>
   <div class="edit-row">
     <button id="editBtn" type="button" class="edit-btn" aria-pressed="false">⇅ 並び替え</button>
     <button id="resetOrderBtn" type="button" class="edit-btn" hidden>元の順番に戻す</button>
@@ -760,7 +771,7 @@
     const gusty = d.gust !== null && d.gust !== undefined && d.gust >= 15; // 平均は弱くても、突風が強い日
     const level = (gusty && d.wind < 10) ? "突風に注意" : windLevel(d.wind);
     return '<div class="wind-line' + (d.wind >= 10 || gusty ? " strong" : "") + '">💨 風　'
-      + (dir ? dir + "　" : "") + "<b>" + Math.round(d.wind) + "m/s</b>" + gust + "　" + level + "</div>";
+      + (dir ? dir + "　" : "") + "<b>" + Math.round(d.wind) + "m/s</b>" + gust + '　<span class="nowrap">' + level + "</span></div>";
   }
 
   // 値が true の連続した時間を「15時〜18時」の形にまとめる
@@ -1021,7 +1032,11 @@
       if (!hits.length) hits = keys.filter(function (k) { return areas.class20s[k].name.indexOf(name) === 0; });
       if (!hits.length) continue;
       const found = {};
-      hits.forEach(function (k) { const a = jmaClass10Of(areas, k); found[a.c10] = a; });
+      hits.forEach(function (k) {
+        const a = jmaClass10Of(areas, k);
+        if (!found[a.c10]) { found[a.c10] = a; a.c20s = []; }
+        found[a.c10].c20s.push(k); // 警報・注意報は市区町村ごとに出るので、市区町村の番号も持っておく
+      });
       const list = Object.keys(found);
       if (list.length !== 1) return null; // 複数の地域にまたがるときは、特定できない
       const r = found[list[0]];
@@ -1063,7 +1078,92 @@
       }
       if (!json) throw e;
     }
-    return { status: "ok", area: hit, json: json, city: hit.matched };
+    // 警報・注意報のファイルは、地方の気象台ごと。奄美のように予報のファイルと違うことがあるので、同じ都道府県の気象台も候補にする
+    const pp2 = hit.c10.slice(0, 2);
+    const warnOffices = [areas.class10s[hit.c10].parent].concat(Object.keys(areas.offices).filter(function (k) {
+      return k.slice(0, 2) === pp2 && k !== areas.class10s[hit.c10].parent;
+    }));
+    return { status: "ok", area: hit, json: json, city: hit.matched, warnOffices: warnOffices };
+  }
+
+  // ---- 気象庁の警報・注意報 ----
+  // 気象庁の発表を、そのまま並べる。強さの判断や、言い換えはしない。
+  const JMA_WARN_NAMES = {
+    "32": ["暴風雪特別警報", 3], "33": ["大雨特別警報", 3], "35": ["暴風特別警報", 3], "36": ["大雪特別警報", 3], "37": ["波浪特別警報", 3], "38": ["高潮特別警報", 3],
+    "02": ["暴風雪警報", 2], "03": ["大雨警報", 2], "04": ["洪水警報", 2], "05": ["暴風警報", 2], "06": ["大雪警報", 2], "07": ["波浪警報", 2], "08": ["高潮警報", 2],
+    "10": ["大雨注意報", 1], "12": ["大雪注意報", 1], "13": ["風雪注意報", 1], "14": ["雷注意報", 1], "15": ["強風注意報", 1], "16": ["波浪注意報", 1],
+    "17": ["融雪注意報", 1], "18": ["洪水注意報", 1], "19": ["高潮注意報", 1], "20": ["濃霧注意報", 1], "21": ["乾燥注意報", 1], "22": ["なだれ注意報", 1],
+    "23": ["低温注意報", 1], "24": ["霜注意報", 1], "25": ["着氷注意報", 1], "26": ["着雪注意報", 1]
+  };
+  const JMA_WARN_STALE_MS = 36 * 3600 * 1000; // 発表から36時間以上たったデータは、古い可能性がある
+  const jmaWarnings = {};
+  function loadJmaWarning(office) {
+    const c = jmaWarnings[office];
+    if (c && Date.now() - c.at < 60000) return c.promise;
+    const promise = getJson(JMA_ROOT + "warning/data/warning/" + office + ".json");
+    jmaWarnings[office] = { at: Date.now(), promise: promise };
+    promise.catch(function () { delete jmaWarnings[office]; });
+    return promise;
+  }
+  // 発表中の警報・注意報の一覧(解除されたものは除く)。見つからなければ null
+  function jmaWarnPick(json, res) {
+    const targets = (res.area.c20s && res.area.c20s.length) ? res.area.c20s : [res.area.c10];
+    let found = false;
+    const codes = {};
+    (json.areaTypes || []).forEach(function (t) {
+      t.areas.forEach(function (a) {
+        if (targets.indexOf(a.code) < 0) return;
+        found = true;
+        a.warnings.forEach(function (w) {
+          if (w.code && w.status !== "解除" && JMA_WARN_NAMES[w.code]) codes[w.code] = true;
+        });
+      });
+    });
+    if (!found) return null;
+    return Object.keys(codes).map(function (c) { return JMA_WARN_NAMES[c]; })
+      .sort(function (a, b) { return b[1] - a[1]; });
+  }
+  function jmaWarnLink(office, label) {
+    return '<a href="https://www.jma.go.jp/bosai/warning/#area_type=offices&amp;area_code=' + office + '" target="_blank" rel="noopener">' + label + "</a>";
+  }
+  function jmaWarnGray(text, office) {
+    return '<div class="warn w-gray">' + esc(text) + (office ? " " + jmaWarnLink(office, "気象庁のページで確認する") : "") + "</div>";
+  }
+  let warnSeq = 0;
+  async function renderWarnBand(key) {
+    const my = ++warnSeq;
+    const el = document.getElementById("warnBand");
+    try {
+      const res = await jmaResolve(key);
+      if (my !== warnSeq) return;
+      if (res.status === "none") { el.innerHTML = jmaWarnGray("この場所の警報・注意報は、表示できません。"); return; }
+      let json = null, list = null, office = res.warnOffices[0];
+      for (let i = 0; i < res.warnOffices.length && list === null; i++) {
+        try {
+          json = await loadJmaWarning(res.warnOffices[i]);
+          list = jmaWarnPick(json, res);
+          if (list !== null) office = res.warnOffices[i];
+        } catch (e) { /* 次の候補を試す */ }
+      }
+      if (my !== warnSeq) return;
+      if (list === null) { el.innerHTML = jmaWarnGray("警報・注意報を取得できませんでした。", office); return; }
+      const at = Date.parse(json.reportDatetime);
+      if (!(Date.now() - at < JMA_WARN_STALE_MS)) { el.innerHTML = jmaWarnGray("警報・注意報のデータが古い可能性があります。", office); return; }
+      if (list.length === 0) { el.innerHTML = ""; return; } // 発表がなければ、何も出さない
+      const top = list[0][1];
+      const rows = [[3, "特別警報"], [2, "警報"], [1, "注意報"]].map(function (g) {
+        const names = list.filter(function (w) { return w[1] === g[0]; }).map(function (w) { return w[0]; });
+        return names.length ? '<div class="w-row"><b>' + g[1] + "</b>　" + esc(names.join("・")) + "</div>" : "";
+      }).join("");
+      const d = new Date(at);
+      const when = (d.getMonth() + 1) + "/" + d.getDate() + " " + d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+      el.innerHTML = '<div class="warn ' + (top === 3 ? "w-special" : top === 2 ? "w-warn" : "") + '">'
+        + '<div class="w-title">⚠️ いま発表中の警報・注意報（' + esc(jmaAreaLabel(res.area)) + "）</div>" + rows
+        + '<div class="w-src">' + esc(when) + " 発表。最新の情報は" + jmaWarnLink(office, "気象庁のページ") + "で確認してください。"
+        + "出典：気象庁ホームページを加工して作成</div></div>";
+    } catch (e) {
+      if (my === warnSeq) el.innerHTML = jmaWarnGray("警報・注意報を取得できませんでした。");
+    }
   }
 
   // 気温の地点を選ぶ。名前が合う地点を探し、なければ、その府県の最初の地域に限り、最初の地点を使う
@@ -1684,6 +1784,7 @@
     updateSettingsSummary();
     const region = currentRegion();
     const jmaKey = jmaKeyOf();
+    renderWarnBand(jmaKey); // 警報・注意報は「いま」の情報なので、日付に関係なく出す
     const date = dateEl.value;
     if (!date) { show('<p class="message">日付を選んでください。</p>'); return; }
     if (date < dateEl.min || date > dateEl.max) {
