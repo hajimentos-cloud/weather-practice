@@ -265,6 +265,11 @@
     background: #1971c2; color: #fff; cursor: pointer;
   }
   .zip-row button:disabled { background: #9bb7d4; cursor: default; }
+  .geo-btn {
+    width: 100%; font-size: 1rem; padding: 10px 16px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #1971c2; background: #fff; color: #1971c2; font-weight: bold; margin-bottom: 6px;
+  }
+  .geo-btn:disabled { color: #9bb7d4; border-color: #9bb7d4; cursor: default; }
   .default-row { margin: -4px 0 14px; }
   .default-btn {
     font-size: 0.85rem; padding: 6px 12px; border-radius: 8px; cursor: pointer;
@@ -384,6 +389,8 @@
     </button>
   </div>
   <div class="controls" id="settingsPanel">
+    <button id="geoBtn" type="button" class="geo-btn">📍 現在地の天気を見る</button>
+    <p class="zip-msg" id="geoMsg"></p>
     <label for="zip">郵便番号で探す</label>
     <div class="zip-row">
       <input id="zip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="例: 1600023" maxlength="9">
@@ -439,7 +446,7 @@
 <footer>
   天気データ: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>）<br>
   気象庁の予報: <a href="https://www.jma.go.jp/jma/index.html" target="_blank" rel="noopener">気象庁ホームページ</a><br>
-  郵便番号検索: <a href="https://zipcloud.ibsnet.co.jp/" target="_blank" rel="noopener">zipcloud</a> ／ 住所から位置を調べる: 国土地理院
+  郵便番号検索: <a href="https://zipcloud.ibsnet.co.jp/" target="_blank" rel="noopener">zipcloud</a> ／ 住所から位置を調べる: 国土地理院 ／ 現在地の地名: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>（Nominatim）
   <p class="footer-note">
     <strong>このページの天気について</strong>
     天気・気温・降水確率は、Open-Meteo（海外の気象データサービス）の数値予報モデルの計算結果です。<b>気象庁が発表する予報ではなく</b>、実際の天気とは異なることがあります。大雨・台風・雷など、防災や安全に関わる判断には、<a href="https://www.jma.go.jp/" target="_blank" rel="noopener">気象庁</a>の情報を確認してください。「雨の時間帯」「おすすめの服装」「予報の答え合わせ」は、この計算結果をもとにした目安です。「気象庁の予報」と書かれた部分は、気象庁が発表した予報を、このページが表示用に整えたものです。
@@ -1169,8 +1176,11 @@
     const head = (cat === "台風" && num) ? "台風" + num + "号" : cat;
     const nm = title.name && title.name.jp ? "（" + title.name.jp + "）" : "";
     const lines = [];
-    const kind = [ana.intensity, ana.scale].filter(Boolean).join("・");
-    const move = ana.course ? ana.course + (ana.speed && ana.speed["km/h"] ? "へ 時速" + ana.speed["km/h"] + "km" : "") : "";
+    // 弱い台風などは、強さ・大きさが "-"(なし)で入っている。ゆっくり動くときは、速さが km/h でなく、ことばで入っている
+    const kind = [ana.intensity, ana.scale].filter(function (v) { return v && v !== "-"; }).join("・");
+    const sp = ana.speed || {};
+    const speedText = sp["km/h"] ? "時速" + sp["km/h"] + "km" : (sp.note && sp.note.jp ? sp.note.jp : "");
+    const move = ana.course ? ana.course + "へ" + (speedText ? " " + speedText : "") : "";
     lines.push([kind, ana.location, move].filter(Boolean).join("　"));
     const wind = ana.maximumWind && ana.maximumWind.sustained ? ana.maximumWind.sustained["m/s"] : null;
     const gust = ana.maximumWind && ana.maximumWind.gust ? ana.maximumWind.gust["m/s"] : null;
@@ -1984,6 +1994,61 @@
     }
   }
   zipBtn.addEventListener("click", applyZip);
+
+  // ---- 現在地ボタン ----
+  // 位置は、端末のブラウザが調べる。小数第2位(約1km)に丸めてから使い、保存するのも、丸めた位置だけ
+  const geoBtn = document.getElementById("geoBtn");
+  const geoMsg = document.getElementById("geoMsg");
+  function setGeoMsg(text, isErr) {
+    geoMsg.textContent = text;
+    geoMsg.className = "zip-msg" + (isErr ? " err" : "");
+  }
+  function getPosition() {
+    return new Promise(function (resolve, reject) {
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+    });
+  }
+  // 緯度・経度から、都道府県と市区町村を調べる(日本の外・調べられないときは null)
+  async function placeOf(lat, lon) {
+    const j = await getJson("https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=12&accept-language=ja&lat=" + lat + "&lon=" + lon);
+    const a = j && j.address;
+    if (!a) return null;
+    const m = String(a["ISO3166-2-lvl4"] || "").match(/^JP-(\d\d)$/);
+    const city = a.city || a.town || a.village || a.municipality || "";
+    if (a.country_code !== "jp" || !m || Number(m[1]) < 1 || Number(m[1]) > 47 || !city) return null;
+    const pref = Number(m[1]);
+    return { pref: pref, city: city, prefName: REGIONS[pref - 1].name.replace(/（.*$/, "") };
+  }
+  async function applyGeo() {
+    if (!navigator.geolocation) { setGeoMsg("このブラウザでは、現在地を調べられません。郵便番号か地域で選んでください", true); return; }
+    geoBtn.disabled = true;
+    setGeoMsg("現在地を調べています…（許可を求められたら、「許可」を選んでください）", false);
+    try {
+      const pos = await getPosition();
+      const lat = Math.round(pos.coords.latitude * 100) / 100;
+      const lon = Math.round(pos.coords.longitude * 100) / 100;
+      let place = null;
+      try { place = await placeOf(lat, lon); } catch (e) { /* 地名が調べられなくても、位置の天気は出せる */ }
+      if (place) {
+        setCustom({ name: "現在地（" + place.prefName + place.city + "）", lat: lat, lon: lon, pref: place.pref, city: place.city });
+        setGeoMsg("現在地（" + place.prefName + place.city + "付近）の天気を表示しています", false);
+      } else {
+        setCustom({ name: "現在地（緯度" + lat + "・経度" + lon + "）", lat: lat, lon: lon });
+        setGeoMsg("現在地の天気を表示しています。日本の外、または地名を調べられなかったため、気象庁の情報は出ません", false);
+      }
+      saveLoc();
+      update();
+      updateWeek();
+      updateHourly();
+    } catch (e) {
+      if (e && e.code === 1) setGeoMsg("現在地の使用が許可されていません。ブラウザやiPhoneの設定で、このサイトの位置情報を許可してください。または、郵便番号か地域で選んでください", true);
+      else if (e && e.code === 3) setGeoMsg("現在地を調べるのに時間がかかりすぎました。もう一度試すか、郵便番号か地域で選んでください", true);
+      else setGeoMsg("現在地を調べられませんでした。郵便番号か地域で選んでください", true);
+    } finally {
+      geoBtn.disabled = false;
+    }
+  }
+  geoBtn.addEventListener("click", applyGeo);
   zipEl.addEventListener("keydown", function (e) { if (e.key === "Enter") applyZip(); });
 
   // ---- セクションの並び替え（▲▼で動かす。並び順はブラウザに保存）----
