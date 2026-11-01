@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#d6e9f8">
+<title>XCC 課題の状況</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: linear-gradient(180deg, #d6e9f8 0%, #eaf3fb 100%);
+    background-attachment: fixed;
+    color: #1f2d3d;
+    min-height: 100vh;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 1.4rem; text-align: center; margin: 8px 0 4px; }
+  .lead { text-align: center; font-size: 0.85rem; color: #5a6b7c; margin: 0 0 16px; }
+  .summary { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .chip { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; background: #fff; border: 1px solid #dbe4ee; }
+  .msg { text-align: center; font-size: 0.85rem; min-height: 1.4em; color: #5a6b7c; }
+  .msg.error { color: #c92a2a; }
+  .card {
+    margin-top: 16px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  .task { display: grid; grid-template-columns: 3.4em 1fr; gap: 4px 8px; padding: 10px 0; border-top: 1px solid #eef2f6; }
+  .task:first-of-type { border-top: none; }
+  .no { font-weight: bold; color: #1971c2; }
+  .title { overflow-wrap: anywhere; }
+  .memo { font-size: 0.8rem; color: #868e96; margin: 2px 0 0; overflow-wrap: anywhere; }
+  .status-row { grid-column: 2; }
+  select.status {
+    font-size: 0.9rem; padding: 6px 10px; border-radius: 8px; border: 1px solid #1971c2; background: #fff; color: #1f2d3d;
+  }
+  select.status[data-v="終わった"] { background: #e6f4ea; border-color: #2b8a3e; }
+  select.status[data-v="途中"] { background: #fff4e0; border-color: #e8890c; }
+  select.status[data-v="まだ"] { background: #f1f3f5; border-color: #adb5bd; }
+  select.status:disabled { opacity: 0.6; }
+  footer { margin-top: 24px; font-size: 0.75rem; color: #868e96; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>XCC 課題の状況</h1>
+  <p class="lead">第1回〜第11回。状況はプルダウンで変えると、そのまま保存されます。</p>
+  <div class="summary" id="summary"></div>
+  <p class="msg" id="msg" aria-live="polite">読み込み中…</p>
+  <div id="list"></div>
+  <footer>データの保存先: Supabase（練習用・誰でも読み書きできる設定）</footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+  // ここに書く鍵は「公開してよい鍵（publishable key）」。表の読み書きは、RLS のポリシーで許した範囲に限られる。
+  // 秘密の鍵は、絶対にここへ書かない。
+  const SUPABASE_URL = "https://snhhlcyejqsuetaboemb.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ey3evFiiG9hZxinX9Mq-GQ_TiEYMJhL";
+  const sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+    : null;
+
+  const STATUSES = ["終わった", "途中", "まだ"];
+  const listEl = document.getElementById("list");
+  const msgEl = document.getElementById("msg");
+  const summaryEl = document.getElementById("summary");
+  let rows = [];
+
+  function esc(t) {
+    return String(t).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function render() {
+    const bySession = {};
+    rows.forEach(function (r) { (bySession[r.session_no] = bySession[r.session_no] || []).push(r); });
+    listEl.innerHTML = Object.keys(bySession).map(Number).sort(function (a, b) { return a - b; }).map(function (n) {
+      return '<section class="card"><h2>第' + n + '回</h2>' + bySession[n].map(function (r) {
+        return '<div class="task">'
+          + '<span class="no">' + esc(r.task_no) + '</span>'
+          + '<div><div class="title">' + esc(r.title) + '</div>'
+          + (r.memo ? '<p class="memo">' + esc(r.memo) + '</p>' : '') + '</div>'
+          + '<div class="status-row"><select class="status" data-id="' + r.id + '" data-v="' + esc(r.status) + '" aria-label="'
+          + esc("第" + r.session_no + "回 " + r.task_no + " の状況") + '">'
+          + STATUSES.map(function (s) { return '<option' + (s === r.status ? " selected" : "") + '>' + s + '</option>'; }).join("")
+          + '</select></div></div>';
+      }).join("") + '</section>';
+    }).join("");
+    summaryEl.innerHTML = STATUSES.map(function (s) {
+      return '<span class="chip">' + s + ' ' + rows.filter(function (r) { return r.status === s; }).length + '</span>';
+    }).join("");
+  }
+
+  async function load() {
+    if (!sb) { msgEl.className = "msg error"; msgEl.textContent = "保存先（Supabase）に接続できませんでした。"; return; }
+    const res = await sb.from("xcc_task_status").select("id,session_no,task_no,title,status,memo")
+      .order("session_no", { ascending: true }).order("id", { ascending: true });
+    if (res.error) { msgEl.className = "msg error"; msgEl.textContent = "読み込めませんでした。もう一度お試しください。"; return; }
+    rows = res.data;
+    msgEl.className = "msg";
+    msgEl.textContent = rows.length ? "" : "まだ行がありません。";
+    render();
+  }
+
+  listEl.addEventListener("change", async function (e) {
+    const sel = e.target.closest("select.status");
+    if (!sel) return;
+    const row = rows.find(function (r) { return String(r.id) === sel.dataset.id; });
+    if (!row) return;
+    const prev = row.status;
+    sel.disabled = true;
+    msgEl.className = "msg";
+    msgEl.textContent = "保存中…";
+    const res = await sb.from("xcc_task_status").update({ status: sel.value }).eq("id", row.id);
+    if (res.error) {
+      sel.value = prev;
+      msgEl.className = "msg error";
+      msgEl.textContent = "保存できませんでした。もう一度お試しください。";
+    } else {
+      row.status = sel.value;
+      msgEl.textContent = "保存しました。";
+      render();
+    }
+    sel.disabled = false;
+  });
+
+  load();
+</script>
+</body>
+</html>
