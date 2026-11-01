@@ -277,6 +277,17 @@
   }
   .default-btn.on { background: #1971c2; color: #fff; }
   .default-msg { font-size: 0.8rem; color: #5a6b7c; margin: 6px 0 0; min-height: 1.2em; }
+  .fav-btn {
+    font-size: 0.85rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; margin-left: 8px;
+    border: 1px solid #1971c2; background: #fff; color: #1971c2;
+  }
+  .fav-btn:disabled { color: #9bb7d4; border-color: #9bb7d4; cursor: default; }
+  .fav-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .fav-card { border: 1px solid #dbe4ee; border-radius: 10px; padding: 10px 12px; background: #f8fbfe; color: #1f2d3d; }
+  .fav-card .fav-name { font-weight: bold; margin: 0 0 4px; overflow-wrap: anywhere; }
+  .fav-card .fav-wx { margin: 0; }
+  .fav-card .fav-temp { margin: 2px 0 8px; font-size: 0.9rem; }
+  .fav-del { font-size: 0.8rem; padding: 4px 10px; border-radius: 8px; cursor: pointer; border: 1px solid #c92a2a; background: #fff; color: #c92a2a; }
   .zip-msg { font-size: 0.8rem; color: #5a6b7c; margin: 0 0 14px; min-height: 1.2em; }
   .zip-msg.err { color: #c92a2a; }
   .hours { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
@@ -401,6 +412,7 @@
     <select id="region"></select>
     <div class="default-row">
       <button id="defBtn" type="button" class="default-btn"></button>
+      <button id="favAddBtn" type="button" class="fav-btn">📌 お気に入りに追加</button>
       <p class="default-msg" id="defMsg"></p>
     </div>
     <label for="date">日付</label>
@@ -441,6 +453,14 @@
         <p class="message">読み込み中…</p>
       </div>
     </section>
+    <section class="sec" data-id="favorites">
+      <div class="card" id="favorites">
+        <h2>📌 お気に入りの地点</h2>
+        <p class="zip-msg" id="favMsg"></p>
+        <div class="fav-list" id="favList"></div>
+        <p class="note">今日の天気です。地点は Supabase に保存しているので、ページを開き直しても残ります。</p>
+      </div>
+    </section>
   </div>
 </main>
 <footer>
@@ -453,6 +473,7 @@
   </p>
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
   // 47都道府県の県庁所在地（緯度・経度）
   const REGIONS = [
@@ -2053,8 +2074,8 @@
 
   // ---- セクションの並び替え（▲▼で動かす。並び順はブラウザに保存）----
   const ORDER_KEY = "weather-practice:order";
-  const DEFAULT_ORDER = ["result", "hourly", "insights", "outfit", "week"];
-  const SEC_NAMES = { result: "🌤 選んだ日の天気", hourly: "🕒 時間ごとの天気", insights: "📌 選んだ日の詳細", outfit: "👕 おすすめの服装", week: "📅 1週間の予報" };
+  const DEFAULT_ORDER = ["result", "hourly", "insights", "outfit", "week", "favorites"];
+  const SEC_NAMES = { result: "🌤 選んだ日の天気", hourly: "🕒 時間ごとの天気", insights: "📌 選んだ日の詳細", outfit: "👕 おすすめの服装", week: "📅 1週間の予報", favorites: "📌 お気に入りの地点" };
   const sectionsEl = document.getElementById("sections");
   const editBtn = document.getElementById("editBtn");
   const resetOrderBtn = document.getElementById("resetOrderBtn");
@@ -2125,6 +2146,85 @@
   });
   applyOrder(loadOrder());
 
+  // ---- お気に入りの地点（Supabase の表 favorite_places に保存）----
+  // ここに書く鍵は「公開してよい鍵（publishable key）」。表の読み書きは、RLS のポリシーで許した範囲に限られる。
+  // 秘密の鍵は、絶対にここへ書かない。
+  const SUPABASE_URL = "https://snhhlcyejqsuetaboemb.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ey3evFiiG9hZxinX9Mq-GQ_TiEYMJhL";
+  const sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+    : null;
+
+  const favs = []; // { id, name, lat, lon, code, max, min }（code などは天気を取れたときだけ）
+  const favAddBtn = document.getElementById("favAddBtn");
+  const favListEl = document.getElementById("favList");
+  const favMsgEl = document.getElementById("favMsg");
+
+  function renderFavs() {
+    favListEl.innerHTML = favs.map(function (f) {
+      const wx = (f.code === undefined)
+        ? '<p class="fav-wx">天気を取得できませんでした</p>'
+        : '<p class="fav-wx">' + weatherText(f.code) + '</p>'
+          + '<p class="fav-temp">最高 ' + Math.round(f.max) + '℃ / 最低 ' + Math.round(f.min) + '℃</p>';
+      return '<div class="fav-card">'
+        + '<p class="fav-name">' + esc(f.name) + '</p>'
+        + wx
+        + '<button type="button" class="fav-del" data-id="' + f.id + '" aria-label="' + esc(f.name) + ' を削除">削除</button>'
+        + '</div>';
+    }).join("");
+  }
+  async function withWeather(row) {
+    const f = { id: row.id, name: row.name, lat: row.latitude, lon: row.longitude };
+    try {
+      const d = await getDaily({ lat: f.lat, lon: f.lon }, todayStr);
+      if (d) { f.code = d.code; f.max = d.max; f.min = d.min; }
+    } catch (e) { /* 天気だけ取れなかった。地点は表示する */ }
+    return f;
+  }
+  async function loadFavs() {
+    if (!sb) { favMsgEl.textContent = "保存先（Supabase）に接続できませんでした。"; return; }
+    const res = await sb.from("favorite_places").select("id,name,latitude,longitude").order("created_at", { ascending: true });
+    if (res.error) { favMsgEl.textContent = "お気に入りを読み込めませんでした。"; return; }
+    const list = await Promise.all(res.data.map(withWeather));
+    favs.length = 0;
+    list.forEach(function (f) { favs.push(f); });
+    renderFavs();
+  }
+  favAddBtn.addEventListener("click", async function () {
+    const region = currentRegion();
+    if (!region) { favMsgEl.textContent = "地点を選んでください。"; return; }
+    if (!sb) { favMsgEl.textContent = "保存先（Supabase）に接続できませんでした。"; return; }
+    if (favs.some(function (f) { return f.lat === region.lat && f.lon === region.lon; })) {
+      favMsgEl.textContent = "「" + region.name + "」はもう追加してあります。";
+      return;
+    }
+    favAddBtn.disabled = true;
+    favMsgEl.textContent = "保存中…";
+    try {
+      const res = await sb.from("favorite_places")
+        .insert({ name: region.name, latitude: region.lat, longitude: region.lon })
+        .select("id,name,latitude,longitude").single();
+      if (res.error) throw res.error;
+      favs.push(await withWeather(res.data));
+      favMsgEl.textContent = "";
+      renderFavs();
+    } catch (e) {
+      favMsgEl.textContent = "保存できませんでした。もう一度お試しください。";
+    }
+    favAddBtn.disabled = false;
+  });
+  favListEl.addEventListener("click", async function (e) {
+    const btn = e.target.closest(".fav-del");
+    if (!btn) return;
+    btn.disabled = true;
+    const res = await sb.from("favorite_places").delete().eq("id", Number(btn.dataset.id));
+    if (res.error) { btn.disabled = false; favMsgEl.textContent = "削除できませんでした。もう一度お試しください。"; return; }
+    const i = favs.findIndex(function (f) { return String(f.id) === btn.dataset.id; });
+    if (i >= 0) favs.splice(i, 1);
+    favMsgEl.textContent = "";
+    renderFavs();
+  });
+
   regionEl.addEventListener("change", function () { saveLoc(); refreshDefaultUi(); update(); updateWeek(); updateHourly(); });
   dateEl.addEventListener("change", update);
   refreshScene(true);
@@ -2139,6 +2239,7 @@
   update();
   updateWeek();
   updateHourly();
+  loadFavs();
 </script>
 </body>
 </html>
